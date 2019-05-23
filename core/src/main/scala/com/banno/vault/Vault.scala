@@ -31,7 +31,9 @@ import scala.concurrent.duration._
 
 object Vault {
 
-  // https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+  /**
+   * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+   */
   def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String)(implicit F: Sync[F]): F[VaultToken] = {
     val request = Request[F](
           method = Method.POST,
@@ -46,7 +48,9 @@ object Vault {
     } yield token
   }
 
-  // https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+  /**
+   *  https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+   */
   def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Sync[F]): F[VaultToken] = {
     val request = Request[F](
         method = Method.POST,
@@ -64,7 +68,9 @@ object Vault {
     } yield token
   }
 
-  // https://www.vaultproject.io/api/secret/kv/index.html#read-secret
+  /**
+   *  https://www.vaultproject.io/api/secret/kv/index.html#read-secret
+   */
   def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Sync[F], D: Decoder[A]): F[VaultSecret[A]] = {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
@@ -77,7 +83,9 @@ object Vault {
     }
   }
 
-  // https://www.vaultproject.io/api/system/leases.html#renew-lease
+  /**
+   *  https://www.vaultproject.io/api/system/leases.html#renew-lease
+   */
   def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Sync[F]): F[VaultSecretRenewal] = {
     val request = Request[F](
         method = Method.PUT,
@@ -96,7 +104,9 @@ object Vault {
     } yield renewal
   }
 
-  // https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
+  /**
+   *  https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
+   */
   def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken, newLeaseDuration: FiniteDuration)(implicit F: Sync[F]): F[VaultToken] = {
     val request = Request[F](
         method = Method.POST,
@@ -115,7 +125,9 @@ object Vault {
     } yield token
   }
 
-  // https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
+  /**
+   *  https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
+   */
   def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken)(implicit F: Sync[F]): F[Unit] = {
     val request = Request[F](
         method = Method.POST,
@@ -128,7 +140,9 @@ object Vault {
     }
   }
 
-  // https://www.vaultproject.io/api/system/leases.html#revoke-lease
+  /**
+   *  https://www.vaultproject.io/api/system/leases.html#revoke-lease
+   */
   def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Sync[F]): F[Unit] = {
     val request = Request[F](
         method = Method.PUT,
@@ -144,7 +158,9 @@ object Vault {
     } yield ()
   }
 
-  // https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
+  /**
+   *  https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
+   */
   def generateCertificate[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: CertificateRequest)(implicit F: Sync[F]): F[VaultSecret[CertificateData]] =
     generateSecret(client, vaultUri)(token, secretPath, payload)
 
