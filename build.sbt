@@ -36,7 +36,7 @@ val specs2V = "4.5.1"
 val disciplineV = "0.11.1"
 val scalacheckShapelessV = "1.1.8"
 
-val kindProjectorV = "0.10.0"
+val kindProjectorV = "0.10.2"
 val betterMonadicForV = "0.3.0"
 
 // General Settings
