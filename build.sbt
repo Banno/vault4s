@@ -30,7 +30,7 @@ lazy val contributors = Seq(
 )
 
 
-val http4sV = "0.20.1"
+val http4sV = "0.20.2"
 
 val specs2V = "4.5.1"
 val disciplineV = "0.11.1"
