@@ -33,8 +33,6 @@ lazy val contributors = Seq(
 val http4sV = "0.20.1"
 
 val specs2V = "4.5.1"
-val disciplineV = "0.11.1"
-val scalacheckShapelessV = "1.1.8"
 
 val kindProjectorV = "0.10.2"
 val betterMonadicForV = "0.3.0"
@@ -65,9 +63,7 @@ lazy val commonSettings = Seq(
 
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.specs2"                  %% "specs2-core"                % specs2V               % Test,
-    "org.specs2"                  %% "specs2-scalacheck"          % specs2V               % Test,
-    "org.typelevel"               %% "discipline"                 % disciplineV           % Test,
-    "com.github.alexarchambault"  %% "scalacheck-shapeless_1.13"  % scalacheckShapelessV  % Test
+    "org.specs2"                  %% "specs2-scalacheck"          % specs2V               % Test
   )
 )
 
@@ -146,7 +142,7 @@ lazy val mimaSettings = {
     val minorVersions : List[Int] =
       if (major >= 1) Range(0, minor).inclusive.toList
       else List(minor)
-    def patchVersions(currentMinVersion: Int): List[Int] = 
+    def patchVersions(currentMinVersion: Int): List[Int] =
       if (minor == 0 && patch == 0) List.empty[Int]
       else if (currentMinVersion != minor) List(0)
       else Range(0, patch - 1).inclusive.toList
@@ -178,7 +174,7 @@ lazy val mimaSettings = {
     mimaFailOnProblem := mimaVersions(version.value).toList.headOption.isDefined,
     mimaPreviousArtifacts := (mimaVersions(version.value) ++ extraVersions)
       .filterNot(excludedVersions.contains(_))
-      .map{v => 
+      .map{v =>
         val moduleN = moduleName.value + "_" + scalaBinaryVersion.value.toString
         organization.value % moduleN % v
       },
