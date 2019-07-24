@@ -5,7 +5,7 @@ lazy val `vault4s` = project.in(file("."))
   .aggregate(core, docs)
 
 lazy val core = project.in(file("core"))
-  .settings(commonSettings, releaseSettings, mimaSettings)
+  .settings(commonSettings, releaseSettings)
   .settings(
     name := "vault4s"
   )
@@ -172,7 +172,7 @@ lazy val mimaSettings = {
 
   Seq(
     mimaFailOnProblem := mimaVersions(version.value).toList.headOption.isDefined,
-    mimaFailOnNoPrevious in ThisBuild := false,
+    mimaFailOnNoPrevious := false,
     mimaPreviousArtifacts := (mimaVersions(version.value) ++ extraVersions)
       .filterNot(excludedVersions.contains(_))
       .map{v =>
