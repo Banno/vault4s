@@ -1,6 +1,7 @@
 import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 
 lazy val `vault4s` = project.in(file("."))
+  .disablePlugins(MimaPlugin)
   .settings(commonSettings, releaseSettings, skipOnPublishSettings)
   .aggregate(core, docs)
 
@@ -172,7 +173,7 @@ lazy val mimaSettings = {
 
   Seq(
     mimaFailOnProblem := mimaVersions(version.value).toList.headOption.isDefined,
-    mimaFailOnNoPrevious in ThisBuild := false,
+    mimaFailOnNoPrevious := false,
     mimaPreviousArtifacts := (mimaVersions(version.value) ++ extraVersions)
       .filterNot(excludedVersions.contains(_))
       .map{v =>
