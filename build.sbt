@@ -32,7 +32,7 @@ lazy val contributors = Seq(
 
 val http4sV = "0.20.10"
 
-val specs2V = "4.7.0"
+val specs2V = "4.7.1"
 
 val kindProjectorV = "0.10.3"
 val betterMonadicForV = "0.3.1"
