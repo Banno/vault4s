@@ -15,20 +15,20 @@ stages:
 
 scala_version_213: &scala_version_213 "2.13.1"
 scala_version_212: &scala_version_212 "2.12.10"
-scala_version_211: &scala_version_212 "2.11.12"
+# scala_version_211: &scala_version_212 "2.11.12"
 
 jobs:
   include:
     # stage="test" if no stage is specified
-    # - name: test 2.13
-    #   scala: *scala_version_213
-    #   script: sbt ++$TRAVIS_SCALA_VERSION test
+    - name: test 2.13
+      scala: *scala_version_213
+      script: sbt ++$TRAVIS_SCALA_VERSION test
     - name: test 2.12
       scala: *scala_version_212
       script: sbt ++$TRAVIS_SCALA_VERSION test
-    - name: test 2.11
-      scala: *scala_version_211
-      script: sbt ++$TRAVIS_SCALA_VERSION test
+    # - name: test 2.11
+    #   scala: *scala_version_211
+    #   script: sbt ++$TRAVIS_SCALA_VERSION test
     - name: mima
       script: sbt +mimaReportBinaryIssues
     - name: site
