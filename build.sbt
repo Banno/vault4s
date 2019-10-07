@@ -2,7 +2,7 @@ val http4sV = "0.21.0-M5"
 
 val specs2V = "4.7.1"
 
-val kindProjectorV = "0.10.3"
+val kindProjectorV = "0.11.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
@@ -70,7 +70,7 @@ lazy val commonSettings = Seq(
   scalaVersion := "2.13.1",
   crossScalaVersions := Seq(scalaVersion.value, "2.12.10"),
 
-  addCompilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.binary),
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
   libraryDependencies ++= Seq(
     "org.http4s"                  %% "http4s-client"              % http4sV,
