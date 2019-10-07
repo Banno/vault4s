@@ -1,6 +1,6 @@
 addSbtPlugin("io.github.davidgregory084" % "sbt-tpolecat" % "0.1.8")
 
-addSbtPlugin("org.tpolecat" % "tut-plugin" % "0.6.12")
+addSbtPlugin("org.tpolecat" % "tut-plugin" % "0.6.13")
 addSbtPlugin("com.47deg" % "sbt-microsites" % "0.9.7")
 addSbtPlugin("com.typesafe.sbt" % "sbt-ghpages" % "0.6.3")
 
