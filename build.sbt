@@ -1,14 +1,14 @@
-val http4sV = "0.20.11"
+val http4sV = "0.21.0-M5"
 
 val specs2V = "4.7.1"
 
-val kindProjectorV = "0.10.3"
+val kindProjectorV = "0.11.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
-  .disablePlugins(MimaPlugin)
-  .enablePlugins(NoPublishPlugin)
-  .aggregate(core, docs)
+  .settings(publish / skip := true)
+  .disablePlugins(MimaPlugin)  
+  .aggregate(core)
 
 lazy val core = project.in(file("core"))
   .settings(commonSettings)
@@ -17,8 +17,8 @@ lazy val core = project.in(file("core"))
   )
 
 lazy val docs = project.in(file("docs"))
+  .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)
-  .enablePlugins(NoPublishPlugin)
   .enablePlugins(MicrositesPlugin)
   .enablePlugins(TutPlugin)
   .settings(commonSettings)
@@ -67,10 +67,10 @@ lazy val docs = project.in(file("docs"))
 
 // General Settings
 lazy val commonSettings = Seq(
-  scalaVersion := "2.12.10",
-  crossScalaVersions := Seq(scalaVersion.value, "2.11.12"),
+  scalaVersion := "2.13.1",
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.10"),
 
-  addCompilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.binary),
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
   libraryDependencies ++= Seq(
     "org.http4s"                  %% "http4s-client"              % http4sV,
