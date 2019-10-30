@@ -45,7 +45,7 @@ object Transit {
   def encrypt[F[_]: Sync, A: CoderBase64]
     (client: Client[F], vaultUri: Uri, token: VaultToken, key: KeyName)
     (plainData: A)
-      : F[Encrypted] =
+      : F[CipherText] =
     new TransitClient[F](client, vaultUri, token, key).encrypt(plainData)
 
   /**  Function to encrypt data.
@@ -55,7 +55,7 @@ object Transit {
   def encryptInContext[F[_]: Sync, Data: CoderBase64, Context: CoderBase64: Show]
     (client: Client[F], vaultUri: Uri, token: VaultToken, key: KeyName)
     (data: Data, context: Context)
-      : F[Encrypted] =
+      : F[CipherText] =
     new TransitClient[F](client, vaultUri, token, key).encryptInContext(data, context)
 
   /**  Function to decrypt data.
@@ -64,7 +64,7 @@ object Transit {
     */
   def decrypt[F[_]: Sync, Data: CoderBase64]
     (client: Client[F], vaultUri: Uri, token: VaultToken, key: KeyName)
-    (cipherText: Encrypted)
+    (cipherText: CipherText)
       : F[Data] =
     new TransitClient[F](client, vaultUri, token, key).decrypt(cipherText)
 
@@ -74,7 +74,7 @@ object Transit {
     */
   def decryptInContext[F[_]: Sync, Data: CoderBase64, Context: CoderBase64: Show]
     (client: Client[F], vaultUri: Uri, token: VaultToken, key: KeyName)
-    (cipherText: Encrypted, context: Context)
+    (cipherText: CipherText, context: Context)
       : F[Data] =
     new TransitClient[F](client, vaultUri, token, key).decryptInContext(cipherText, context)
 }
@@ -117,21 +117,21 @@ class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: VaultToken, k
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
-  def encrypt[A: CoderBase64](plainData: A): F[Encrypted] = {
+  def encrypt[A: CoderBase64](plainData: A): F[CipherText] = {
     val encryptReq = EncryptRequest(CoderBase64[A].toBase64(plainData), None)
     val request = doRequest(encryptUri, encryptReq)
     for {
       response <- F.handleErrorWith(client.expect[EncryptResponse](request)){ e =>
         F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}".some))
       }
-    } yield Encrypted(response.ciphertext.ciphertext)
+    } yield response.ciphertext
   }
 
   /**  Function to encrypt data, adding a context for key derivation.
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
-  def encryptInContext[Data: CoderBase64, Context: CoderBase64: Show](data: Data, context: Context): F[Encrypted] = {
+  def encryptInContext[Data: CoderBase64, Context: CoderBase64: Show](data: Data, context: Context): F[CipherText] = {
     val encryptReq = EncryptRequest(
       plaintext = CoderBase64[Data].toBase64(data),
       context   = Some(CoderBase64[Context].toBase64(context))
@@ -141,14 +141,14 @@ class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: VaultToken, k
       response <- F.handleErrorWith(client.expect[EncryptResponse](request)){ e =>
         F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, context = $context.show".some))
       }
-    } yield Encrypted(response.ciphertext.ciphertext)
+    } yield response.ciphertext
   }
 
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
    *
    */
-  def decrypt[Data: CoderBase64](cipherText: Encrypted): F[Data] = {
-    val decryptReq = DecryptRequest(CipherText(cipherText.value), None)
+  def decrypt[Data: CoderBase64](cipherText: CipherText): F[Data] = {
+    val decryptReq = DecryptRequest(cipherText, None)
     val request = doRequest(decryptUri, decryptReq)
     for {
       response <- F.handleErrorWith(client.expect[DecryptResponse](request)){ e =>
@@ -161,8 +161,8 @@ class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: VaultToken, k
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
    *
   */
-  def decryptInContext[Data: CoderBase64, Context: CoderBase64: Show](cipherText: Encrypted, context: Context): F[Data] = {
-    val decryptReq = DecryptRequest(CipherText(cipherText.value), Some(CoderBase64[Context].toBase64(context)))
+  def decryptInContext[Data: CoderBase64, Context: CoderBase64: Show](cipherText: CipherText, context: Context): F[Data] = {
+    val decryptReq = DecryptRequest(cipherText, Some(CoderBase64[Context].toBase64(context)))
     val request = doRequest(decryptUri, decryptReq)
     for {
       response <- F.handleErrorWith(client.expect[DecryptResponse](request)){ e =>
@@ -174,6 +174,3 @@ class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: VaultToken, k
   }
 
 }
-
-/** A wrapper for data that is encrypted or decrypted with a transit instance */
-final case class Encrypted(val value: Base64) extends AnyVal

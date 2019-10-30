@@ -56,7 +56,7 @@ object Transit extends Spec with ScalaCheck with TransitData {
   val decryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
     import testCase.mockClient
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), token, KeyName(keyName))
-    val actual = transit.decryptInContext[Order, Agent](Encrypted(testCase.encrypted), testCase.agent)
+    val actual = transit.decryptInContext[Order, Agent](testCase.encrypted, testCase.agent)
     actual.unsafeRunSync === testCase.order
   }
 
@@ -64,7 +64,7 @@ object Transit extends Spec with ScalaCheck with TransitData {
     import testCase.mockClient
     val otoken = token.copy(clientToken = token.clientToken + "X" )
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), otoken, KeyName(keyName))
-    val actual = transit.decryptInContext[Order, Agent](Encrypted(testCase.encrypted), testCase.agent)
+    val actual = transit.decryptInContext[Order, Agent](testCase.encrypted, testCase.agent)
     actual.attempt.unsafeRunSync.isLeft
   }
 }
@@ -74,7 +74,7 @@ trait TransitData {
   val keyName = "testingKey"
   val token = VaultToken("vaultToken", 0L, false)
 
-  case class TestCase(order: Order, agent: Agent, encrypted: Base64) {
+  case class TestCase(order: Order, agent: Agent, encrypted: CipherText) {
     def mockClient: Client[IO] = Client.fromHttpApp {
       val context = Some(agentBase64.toBase64(agent))
       val plain = orderBase64.toBase64(order)
@@ -95,7 +95,7 @@ trait TransitData {
   val genAgent = Gen.uuid.map(Agent(_))
 
   val genTestCase = for {
-    encrypted <- TransitGenerators.base64
+    encrypted <- TransitGenerators.cipherText
     order <- genOrder
     agent <- genAgent
   } yield TestCase(order, agent, encrypted)

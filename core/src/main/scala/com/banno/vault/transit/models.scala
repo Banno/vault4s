@@ -18,6 +18,7 @@ package com.banno.vault.transit
 
 import cats.Eq
 import cats.kernel.instances.option._
+import cats.kernel.instances.string._
 import cats.syntax.eq._
 import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
@@ -89,23 +90,12 @@ private[transit] final case class ContextualPlainText(plaintext: Base64, context
 /** In the Vault Transit, cipher-texts are Base64 strings preceded by the `"vault:v1:"` prefix text.
   * We our special wrapper class to represent Base64 Strings.  
   */
-private[transit] final case class CipherText(ciphertext: Base64)
+final case class CipherText(ciphertext: String)
 private[transit] object CipherText {
 
-  final val prefix: String = "vault:v1:"
-
-  private def parse(full: String): Either[String, CipherText] =
-    if (full.startsWith(prefix))
-      Base64.fromStringEither(full.drop(prefix.length)).map(CipherText.apply(_))
-    else
-      Left(s"Missing $prefix in ciphertext")
-
-  def show(ct: CipherText): String = s"vault:v1:${ct.ciphertext.value}"
-
-  implicit val encodeCipherText: Encoder[CipherText] = Encoder.encodeString.contramap(show)
-  implicit val decodeCipherText: Decoder[CipherText] = Decoder.decodeString.emap(parse)
-  implicit val eqCipherText: Eq[CipherText] =
-    Eq.by[CipherText, Base64](_.ciphertext)
+  implicit val encodeCipherText: Encoder[CipherText] = Encoder.encodeString.contramap(_.ciphertext)
+  implicit val decodeCipherText: Decoder[CipherText] = Decoder.decodeString.map(CipherText.apply)
+  implicit val eqCipherText: Eq[CipherText] = Eq.by[CipherText, String](_.ciphertext)
 }
 
 private[transit] final case class EncryptRequest(plaintext: Base64, context: Option[Base64])

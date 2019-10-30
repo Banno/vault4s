@@ -28,7 +28,7 @@ class MockTransitService[F[_]: Sync](
   keyname: String, 
   token: String,
   context: Option[Base64],
-  encrypted: Base64,
+  encrypted: CipherText,
   plaintext: Base64
 ) extends Http4sDsl[F] {
 
@@ -53,7 +53,7 @@ class MockTransitService[F[_]: Sync](
             Ok(s"""
               |{
               | "data": {
-              |   "ciphertext": "vault:v1:${encrypted.value}"
+              |   "ciphertext": "${encrypted.ciphertext}"
               | }
               |}""".stripMargin)
           else
@@ -61,7 +61,7 @@ class MockTransitService[F[_]: Sync](
         }
       case req @ POST -> Root / "v1" / "transit" / "decrypt" / `keyname` => 
         req.as[DecryptRequest].flatMap { case decreq => 
-          if (decreq === DecryptRequest(CipherText(encrypted), context))
+          if (decreq === DecryptRequest(encrypted, context))
             Ok(s"""
               |{
               | "data": {

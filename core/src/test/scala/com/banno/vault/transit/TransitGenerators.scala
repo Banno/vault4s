@@ -32,4 +32,7 @@ object TransitGenerators extends VaultArbitraries {
 
   val base64: Gen[Base64] = byteVector.map(Base64.fromByteVector)
 
+  // we generate examples like we have seen so far: a base64-encoded literal, prefixed by `vault:v1:` 
+  val cipherText: Gen[CipherText] = base64.map( x => CipherText(s"vault:v1:${x.value}"))
+
 }

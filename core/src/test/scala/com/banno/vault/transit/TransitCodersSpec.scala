@@ -35,15 +35,15 @@ object TransitCodersSpec extends Spec with ScalaCheck {
       |decode a  decrypt response in $decodeDecryptResponseProp
     """.stripMargin
 
-  val encodeCiphertext: Prop = Prop.forAll(base64){ (bv: Base64) => 
-    val actual = CipherText(bv).asJson 
-    val expected = Json.fromString(s"vault:v1:${bv.value}")
+  val encodeCiphertext: Prop = Prop.forAll(cipherText){ (ct: CipherText) => 
+    val actual = ct.asJson 
+    val expected = Json.fromString(ct.ciphertext)
     (actual === expected) :| s"actual is $actual, expected is $expected" 
   }
 
-  val decodeRoundTrip: Prop = Prop.forAll(base64){ (bv: Base64) =>
+  val decodeRoundTrip: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
     import CipherText._
-    decodeCipherText.decodeJson(encodeCipherText(CipherText(bv))) === Right(CipherText(bv))
+    decodeCipherText.decodeJson(encodeCipherText(ct)) === Right(ct)
   }
 
   val encodeEncryptRequestProp: Prop = 
@@ -56,23 +56,22 @@ object TransitCodersSpec extends Spec with ScalaCheck {
       input.asJson === expected
     }
 
-  val decodeEncryptResponseProp: Prop = Prop.forAll(base64){ (ct: Base64) =>
+  val decodeEncryptResponseProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
     val json = Json.obj(
       "data" -> Json.obj(
-        "ciphertext" -> Json.fromString(s"vault:v1:${ct.value}")
+        "ciphertext" -> Json.fromString(ct.ciphertext)
       )
     )
-    EncryptResponse.decodeEncryptResponse.decodeJson(json) === Right(EncryptResponse(CipherText(ct)))
+    EncryptResponse.decodeEncryptResponse.decodeJson(json) === Right(EncryptResponse(ct))
   }
 
   val encodeDecryptRequestProp: Prop =
-    Prop.forAll(base64, base64){ (ciphertext: Base64, context: Base64) =>
+    Prop.forAll(cipherText, base64){ (ct: CipherText, context: Base64) =>
       val expected = Json.obj(
-        "ciphertext" -> CipherText(ciphertext).asJson,
+        "ciphertext" -> Json.fromString(ct.ciphertext),
         "context" -> Json.fromString(context.value)
       )
-      val input = DecryptRequest(CipherText(ciphertext), Some(context))
-      input.asJson === expected
+      DecryptRequest(ct, Some(context)).asJson === expected
     }
 
   val decodeDecryptResponseProp: Prop = Prop.forAll(base64){ (plaintext: Base64) =>
