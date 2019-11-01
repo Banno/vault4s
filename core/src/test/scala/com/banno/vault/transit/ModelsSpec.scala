@@ -28,7 +28,6 @@ object TransitModelsSpec extends Spec with ScalaCheck {
 
   override def is: SpecStructure = s2"""
       |the Base64 check predicate holds for any ByteVector generated in $isBase64Prop
-      |the encoder and decoder of ciphertext meet the roundtrip law in $decodeRoundTripProp
       |encode an encrypt request in $encodeEncryptRequestProp
       |decode an encrypt response in $decodeEncryptResponseProp
       |encode a  decrypt request in $encodeDecryptRequestProp
@@ -37,11 +36,6 @@ object TransitModelsSpec extends Spec with ScalaCheck {
 
   val isBase64Prop: Prop = Prop.forAll(byteVector){ bv => 
     Base64.isBase64(bv.toBase64) 
-  }
-
-  val decodeRoundTripProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
-    import CipherText._
-    decodeCipherText.decodeJson(encodeCipherText(ct)) === Right(ct)
   }
 
   val encodeEncryptRequestProp: Prop = 
@@ -67,7 +61,7 @@ object TransitModelsSpec extends Spec with ScalaCheck {
     Prop.forAll(cipherText, base64){ (ct: CipherText, context: Base64) =>
       val expected = Json.obj(
         "ciphertext" -> Json.fromString(ct.ciphertext),
-        "context" -> Json.fromString(context.value)
+        "context"    -> Json.fromString(context.value)
       )
       DecryptRequest(ct, Some(context)).asJson === expected
     }

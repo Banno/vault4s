@@ -18,12 +18,9 @@ package com.banno.vault.transit
 
 import cats.Eq
 import cats.kernel.instances.string._
-import java.nio.charset.{StandardCharsets/*, CharacterCodingException*/}
-import java.util.{Base64 => J64}
-import scala.util.{Failure, Success, Try}
 import scala.util.control.NoStackTrace
 import io.circe.{Encoder, Decoder, Json}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, BitVector}
 
 /** A String wrapper class, to ensure that the string inside is a valid
   *  Base64 string, as those used in Vault to represent plaintext and context. 
@@ -68,6 +65,8 @@ object Base64 {
 
   def fromByteVector(bv: ByteVector): Base64 = new Base64(bv.toBase64)
 
+  def fromBitVector(bv: BitVector): Base64 = new Base64(bv.toBase64)
+
   private[transit] def unsafeFrom(str: String): Base64 = new Base64(str)
 }
 
@@ -75,6 +74,9 @@ object Base64 {
   * A type-class to transform a data type A back-and-forth a Base64 encoding.
   * We want to allow our client to process any kind of data, while hiding
   * the implementation detail that Vault uses Base64 strings in its API.
+  *
+  * We recommend building instances of this type-class from the Codec class
+  * of the scodec library. http://scodec.org/
   */
 trait CodecBase64[A] {
   def toBase64(a: A): Base64
@@ -91,34 +93,6 @@ object CodecBase64 {
     def toBase64(bv: Base64): Base64 = bv
     def fromBase64(bv: Base64): Either[DecodeBase64Error, Base64] = Right(bv)
   }
-
-  /** A default Base64 coder for strings, that uses the UTF-8 Character set encoding.
-    * we are using the basic Base64: the one that uses `+` and `/` as extra characters. 
-    */
-  implicit val stringBase64: CodecBase64[String] = StringBase64Impl
-
-  private object StringBase64Impl extends CodecBase64[String] {
-    import StandardCharsets.UTF_8
-    private[this] val jEncoder: J64.Encoder = J64.getEncoder()
-    private[this] val jDecoder: J64.Decoder = J64.getDecoder()
-
-    def toBase64(src: String): Base64 = {
-      val bytes = src.getBytes(UTF_8)
-      val base64Str = jEncoder.encodeToString(bytes)
-      Base64.unsafeFrom(base64Str)
-    }
-
-    def fromBase64(bv: Base64): Either[DecodeBase64Error, String] = {
-      val base64Str = bv.value
-      Try(jDecoder.decode(base64Str)) match {
-        case Success(bytes) =>
-          Right(new String(bytes, UTF_8))
-        case Failure(_)     =>
-          Left(new DecodeBase64Error(s"String $base64Str is is not in valid Base64 scheme"))
-      }
-    }
-  }
-
 }
 
 final class DecodeBase64Error(msg: String) extends RuntimeException(msg) with NoStackTrace

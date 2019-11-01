@@ -28,6 +28,7 @@ import org.scalacheck.{Gen, Prop}
 import org.specs2.{ScalaCheck, Spec}
 import org.specs2.specification.core.SpecStructure
 import scala.util.{Failure, Success, Try}
+import scodec.bits.BitVector
 
 object Transit extends Spec with ScalaCheck with TransitData {
   override def is: SpecStructure =
@@ -100,13 +101,22 @@ trait TransitData {
     agent <- genAgent
   } yield TestCase(order, agent, encrypted)
 
+
+  object stringBase64 extends CodecBase64[String] {
+    def toBase64(a: String): Base64 =
+      Base64.fromBitVector(StringCodec.utf8.encode(a).getOrElse(???))
+    def fromBase64(bv: Base64): Either[DecodeBase64Error, String] =
+      StringCodec.utf8.decode(BitVector.fromBase64(bv.value).get)
+        .leftMap(s => new DecodeBase64Error(s))
+  }
+
   implicit val orderBase64: CodecBase64[Order] = new CodecBase64[Order] {
     def toBase64(a: Order): Base64 =
-      CodecBase64.stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
+      stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
 
     private val Pattern = "([a-zA-Z]+),([0-9]+),([0-9]+);".r
     def fromBase64(bv: Base64): Either[DecodeBase64Error, Order] =
-      CodecBase64.stringBase64.fromBase64(bv).flatMap {
+      stringBase64.fromBase64(bv).flatMap {
         case Pattern(co, nu, pri) => Right(Order(co, nu.toInt, pri.toInt))
         case str => Left(new DecodeBase64Error(s"$str is not a valid order coder"))
       }
@@ -116,10 +126,10 @@ trait TransitData {
 
   implicit val agentBase64: CodecBase64[Agent] = new CodecBase64[Agent] {
     def toBase64(a: Agent): Base64 =
-      CodecBase64.stringBase64.toBase64(a.license.toString)
+      stringBase64.toBase64(a.license.toString)
 
     def fromBase64(bv: Base64): Either[DecodeBase64Error,Agent] =
-      CodecBase64.stringBase64.fromBase64(bv).flatMap { str =>
+      stringBase64.fromBase64(bv).flatMap { str =>
         Try(UUID.fromString(str)) match {
           case Success(value) => Right(Agent(value))
           case Failure(tr) => Left( new DecodeBase64Error(tr.getMessage()) )
