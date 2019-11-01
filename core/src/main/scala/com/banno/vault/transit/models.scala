@@ -24,7 +24,7 @@ import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
 
 /** A Cipher or "type" of Key, which indicates the algorithm being used for encrypting or decrypting. */
-sealed abstract class Cipher(val name: String)
+sealed abstract class Cipher private (val name: String)
 object Cipher {
   /* Source: https://www.vaultproject.io/api/secret/transit/index.html#type */
   case object Aes256Gcm96 extends Cipher("aes256-gcm96")
@@ -34,10 +34,10 @@ object Cipher {
   case object Rsa2048 extends Cipher("rsa-2048")
   case object Rsa4096 extends Cipher("rsa-4096")
 
-  val all: List[Cipher] = List(Aes256Gcm96, ChaCha20Poly1305, ED25519, EcDsaP256, Rsa2048, Rsa4096) 
+  val values: IndexedSeq[Cipher] = Vector(Aes256Gcm96, ChaCha20Poly1305, ED25519, EcDsaP256, Rsa2048, Rsa4096) 
 
   def findEither(name: String): Either[String, Cipher] = 
-    all.find( _.name == name).toRight(s"$name is not a known name of a vault type key")
+    values.find( _.name == name).toRight(s"$name is not a known name of a vault type key")
 }
 
 final case class KeyName(name: String)
@@ -69,19 +69,24 @@ object KeyDetails {
     implicit final val decodeCipher: Decoder[Cipher] = 
       Decoder.decodeString.emap(Cipher.findEither)
 
-    implicit final val decodeKeyDetails: Decoder[KeyDetails] = 
-      Decoder.instance[KeyDetails] { c =>
+    implicit final val decodeKeyDetails: Decoder[KeyDetails] = {
+      implicit val decodeInstantSecond: Decoder[Instant] = 
+        Decoder.decodeLong.emap { numsec =>
+          if (numsec <= Instant.MAX.getEpochSecond) 
+            Right(Instant.ofEpochSecond(numsec))
+          else Left(s"value $numsec of UNIX epoch seconds is over Java maximum Instant")
+        }
+      Decoder.instance[KeyDetails] { c => 
         Decoder.resultInstance.map5(
           c.downField("data").downField("name").as[String],
           c.downField("data").downField("convergent_encryption").as[Boolean],
           c.downField("data").downField("derived").as[Boolean],
-          c.downField("data").downField("keys").as[Map[Int, Long]],
+          c.downField("data").downField("keys").as[Map[Int, Instant]],
           c.downField("data").downField("type").as[Cipher],
-        ){ (name, conv, deriv, vers, cy) => 
-          val versions = vers.map { case (num, secs) => num -> Instant.ofEpochSecond(secs) }
-          KeyDetails(name, conv, deriv, versions, cy)
-        }
+        ){ KeyDetails.apply(_,_,_,_,_)}
       }
+    }
+      
 }
 
 private[transit] final case class PlainText(plaintext: Base64)
@@ -90,12 +95,14 @@ private[transit] final case class ContextualPlainText(plaintext: Base64, context
 /** In the Vault Transit, cipher-texts are Base64 strings preceded by the `"vault:v1:"` prefix text.
   * We our special wrapper class to represent Base64 Strings.  
   */
-final case class CipherText(ciphertext: String)
-private[transit] object CipherText {
-
-  implicit val encodeCipherText: Encoder[CipherText] = Encoder.encodeString.contramap(_.ciphertext)
-  implicit val decodeCipherText: Decoder[CipherText] = Decoder.decodeString.map(CipherText.apply)
-  implicit val eqCipherText: Eq[CipherText] = Eq.by[CipherText, String](_.ciphertext)
+final case class CipherText(ciphertext: String) extends AnyVal
+object CipherText {
+  private[transit] implicit val encodeCipherText: Encoder[CipherText] = 
+    Encoder.encodeString.contramap(_.ciphertext)
+  private[transit] implicit val decodeCipherText: Decoder[CipherText] = 
+    Decoder.decodeString.map(CipherText.apply)
+  implicit val eqCipherText: Eq[CipherText] = 
+    Eq.by[CipherText, String](_.ciphertext)
 }
 
 private[transit] final case class EncryptRequest(plaintext: Base64, context: Option[Base64])
@@ -114,8 +121,8 @@ private[transit] object EncryptResponse {
   implicit val eqEncryptResponse: Eq[EncryptResponse] = Eq.by(_.ciphertext)
 
   implicit val encodeEncryptResponse: Encoder[EncryptResponse] =
-    (er: EncryptResponse) => Json.obj(
-      "data" -> Json.obj("ciphertext" -> Encoder[CipherText].apply(er.ciphertext))
+    (er: EncryptResponse) => Json.obj( "data" -> 
+      Json.obj("ciphertext" -> Encoder[CipherText].apply(er.ciphertext))
     )
 
     implicit val decodeEncryptResponse: Decoder[EncryptResponse] =

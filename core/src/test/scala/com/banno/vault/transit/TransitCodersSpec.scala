@@ -23,25 +23,23 @@ import org.specs2.specification.core.SpecStructure
 import org.scalacheck.Prop
 import io.circe.syntax._ 
 
-object TransitCodersSpec extends Spec with ScalaCheck {
+object TransitModelsSpec extends Spec with ScalaCheck {
   import TransitGenerators._
 
   override def is: SpecStructure = s2"""
-      |encode a cipher text with the given prefix in $encodeCiphertext
-      |decode a cipher text with the given prefix in $decodeRoundTrip
+      |the Base64 check predicate holds for any ByteVector generated in $isBase64Prop
+      |the encoder and decoder of ciphertext meet the roundtrip law in $decodeRoundTripProp
       |encode an encrypt request in $encodeEncryptRequestProp
       |decode an encrypt response in $decodeEncryptResponseProp
       |encode a  decrypt request in $encodeDecryptRequestProp
       |decode a  decrypt response in $decodeDecryptResponseProp
     """.stripMargin
 
-  val encodeCiphertext: Prop = Prop.forAll(cipherText){ (ct: CipherText) => 
-    val actual = ct.asJson 
-    val expected = Json.fromString(ct.ciphertext)
-    (actual === expected) :| s"actual is $actual, expected is $expected" 
+  val isBase64Prop: Prop = Prop.forAll(byteVector){ bv => 
+    Base64.isBase64(bv.toBase64) 
   }
 
-  val decodeRoundTrip: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
+  val decodeRoundTripProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
     import CipherText._
     decodeCipherText.decodeJson(encodeCipherText(ct)) === Right(ct)
   }

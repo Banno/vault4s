@@ -100,13 +100,13 @@ trait TransitData {
     agent <- genAgent
   } yield TestCase(order, agent, encrypted)
 
-  implicit val orderBase64: CoderBase64[Order] = new CoderBase64[Order] {
+  implicit val orderBase64: CodecBase64[Order] = new CodecBase64[Order] {
     def toBase64(a: Order): Base64 =
-      CoderBase64.stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
+      CodecBase64.stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
 
     private val Pattern = "([a-zA-Z]+),([0-9]+),([0-9]+);".r
     def fromBase64(bv: Base64): Either[DecodeBase64Error, Order] =
-      CoderBase64.stringBase64.fromBase64(bv).flatMap {
+      CodecBase64.stringBase64.fromBase64(bv).flatMap {
         case Pattern(co, nu, pri) => Right(Order(co, nu.toInt, pri.toInt))
         case str => Left(new DecodeBase64Error(s"$str is not a valid order coder"))
       }
@@ -114,12 +114,12 @@ trait TransitData {
 
   implicit val eqOrder: Eq[Order] = Eq.fromUniversalEquals
 
-  implicit val agentBase64: CoderBase64[Agent] = new CoderBase64[Agent] {
+  implicit val agentBase64: CodecBase64[Agent] = new CodecBase64[Agent] {
     def toBase64(a: Agent): Base64 =
-      CoderBase64.stringBase64.toBase64(a.license.toString)
+      CodecBase64.stringBase64.toBase64(a.license.toString)
 
     def fromBase64(bv: Base64): Either[DecodeBase64Error,Agent] =
-      CoderBase64.stringBase64.fromBase64(bv).flatMap { str =>
+      CodecBase64.stringBase64.fromBase64(bv).flatMap { str =>
         Try(UUID.fromString(str)) match {
           case Success(value) => Right(Agent(value))
           case Failure(tr) => Left( new DecodeBase64Error(tr.getMessage()) )

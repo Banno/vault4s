@@ -28,7 +28,7 @@ import scodec.bits.ByteVector
 /** A String wrapper class, to ensure that the string inside is a valid
   *  Base64 string, as those used in Vault to represent plaintext and context. 
   */
-class Base64 private[Base64] (val value: String)
+final class Base64 private[Base64] (val value: String) extends AnyVal
 
 object Base64 {
 
@@ -46,7 +46,7 @@ object Base64 {
     * Meaning: its length is a multiple of 4, and all its characters are letters, digits, '+' or '/'. 
     * Except at the end, where either: a) the last two characters can both be padding `=``; 
     *  or b) only the last character is padding; or c) no character is padding.   */
-  def isBase64(str: String): Boolean =
+  private[transit] def isBase64(str: String): Boolean =
     (str.length & 3) == 0 && {
       (str.length - str.count(isBase64)) match {
         case 0 => true
@@ -76,19 +76,18 @@ object Base64 {
   * We want to allow our client to process any kind of data, while hiding
   * the implementation detail that Vault uses Base64 strings in its API.
   */
-trait CoderBase64[A] {
+trait CodecBase64[A] {
   def toBase64(a: A): Base64
   def fromBase64(bv: Base64): Either[DecodeBase64Error, A]
 }
 
-object CoderBase64 {
+object CodecBase64 {
 
-  def apply[A](implicit ev: CoderBase64[A]): CoderBase64[A] = ev
+  def apply[A](implicit ev: CodecBase64[A]): CodecBase64[A] = ev
 
-  /** A neutral, identity-like
-    */
-  implicit val identityBase64: CoderBase64[Base64] = Base64Base64Impl
-  private object Base64Base64Impl extends CoderBase64[Base64] {
+  /** A neutral, identity-like Codec for Base64 data.   */
+  implicit val identityBase64: CodecBase64[Base64] = Base64Base64Impl
+  private object Base64Base64Impl extends CodecBase64[Base64] {
     def toBase64(bv: Base64): Base64 = bv
     def fromBase64(bv: Base64): Either[DecodeBase64Error, Base64] = Right(bv)
   }
@@ -96,9 +95,9 @@ object CoderBase64 {
   /** A default Base64 coder for strings, that uses the UTF-8 Character set encoding.
     * we are using the basic Base64: the one that uses `+` and `/` as extra characters. 
     */
-  implicit val stringBase64: CoderBase64[String] = StringBase64Impl
+  implicit val stringBase64: CodecBase64[String] = StringBase64Impl
 
-  private object StringBase64Impl extends CoderBase64[String] {
+  private object StringBase64Impl extends CodecBase64[String] {
     import StandardCharsets.UTF_8
     private[this] val jEncoder: J64.Encoder = J64.getEncoder()
     private[this] val jDecoder: J64.Decoder = J64.getDecoder()
@@ -122,4 +121,4 @@ object CoderBase64 {
 
 }
 
-class DecodeBase64Error(msg: String) extends RuntimeException(msg) with NoStackTrace
+final class DecodeBase64Error(msg: String) extends RuntimeException(msg) with NoStackTrace
