@@ -89,8 +89,33 @@ object KeyDetails {
       
 }
 
-private[transit] final case class PlainText(plaintext: Base64)
-private[transit] final case class ContextualPlainText(plaintext: Base64, context: Base64)
+/** A tagged-like newtype used to indicate that a Base64 value is a plaintext we want to encrypt. 
+  */
+final case class PlainText(val plaintext: Base64)
+object PlainText {
+  implicit val eqPlainText: Eq[PlainText] =
+    Eq.by[PlainText, Base64](_.plaintext)
+  private[transit] implicit val encodePlainText: Encoder[PlainText] =
+    Base64.encodeBase64.contramap(_.plaintext)
+  private[transit] implicit val decodePlainText: Decoder[PlainText] =
+    Base64.decodeBase64.map(PlainText.apply)
+}
+
+/** A tagged-like newtype used to indicate that a Base64 value is the user-supplied context used in key derivation. 
+  * "Key derivation allows the same key to be used for multiple purposes 
+  * by deriving a new key based on a user-supplied context value
+  *
+  * https://www.vaultproject.io/docs/secrets/transit/index.html#transit-secrets-engine
+  */
+final case class Context(val context: Base64)
+object Context {
+  implicit val eqContext: Eq[Context] =
+    Eq.by[Context, Base64](_.context)
+  private[transit] implicit val encodeContext: Encoder[Context] =
+    Base64.encodeBase64.contramap(_.context)
+  private[transit] implicit val decodeContext: Decoder[Context] =
+    Base64.decodeBase64.map(Context.apply)
+}
 
 /** In the Vault Transit, cipher-texts are Base64 strings preceded by the `"vault:v1:"` prefix text.
   * We our special wrapper class to represent Base64 Strings.  
@@ -105,7 +130,7 @@ object CipherText {
     Eq.by[CipherText, String](_.ciphertext)
 }
 
-private[transit] final case class EncryptRequest(plaintext: Base64, context: Option[Base64])
+private[transit] final case class EncryptRequest(plaintext: PlainText, context: Option[Context])
 private[transit] object EncryptRequest {
   implicit val eqEncryptRequest: Eq[EncryptRequest] = { (x: EncryptRequest, y: EncryptRequest) =>
     x.context === y.context && x.plaintext === y.plaintext
@@ -129,7 +154,7 @@ private[transit] object EncryptResponse {
     _.downField("data").get[CipherText]("ciphertext").map(EncryptResponse.apply)
 }
 
-private[transit] final case class DecryptRequest(ciphertext: CipherText, context: Option[Base64])
+private[transit] final case class DecryptRequest(ciphertext: CipherText, context: Option[Context])
 private[transit] object DecryptRequest {
   implicit val eqDecryptResponse: Eq[DecryptRequest] = { 
     (x: DecryptRequest, y: DecryptRequest) => x.context === y.context && x.ciphertext === y.ciphertext
@@ -142,15 +167,15 @@ private[transit] object DecryptRequest {
     Decoder.forProduct2("ciphertext", "context")(DecryptRequest.apply(_,_))
 }
 
-private[transit] final case class DecryptResponse(plaintext: Base64)
+private[transit] final case class DecryptResponse(plaintext: PlainText)
 private[transit] object DecryptResponse {
   implicit val eqDecryptResponse: Eq[DecryptResponse] =
-    Eq.by[DecryptResponse, Base64](_.plaintext)
+    Eq.by[DecryptResponse, PlainText](_.plaintext)
 
   implicit val encodeDecryptResponse: Encoder[DecryptResponse] =
     (dr: DecryptResponse) => Json.obj(
-      "data" -> Json.obj("plaintext" -> Encoder[Base64].apply(dr.plaintext))
+      "data" -> Json.obj("plaintext" -> Encoder[PlainText].apply(dr.plaintext))
     )
   implicit val decodeDecryptResponse: Decoder[DecryptResponse] =
-    _.downField("data").get[Base64]("plaintext").map(DecryptResponse.apply(_))
+    _.downField("data").get[PlainText]("plaintext").map(DecryptResponse.apply(_))
 }

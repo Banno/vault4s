@@ -18,7 +18,6 @@ package com.banno.vault.transit
 
 import cats.Eq
 import cats.kernel.instances.string._
-import scala.util.control.NoStackTrace
 import io.circe.{Encoder, Decoder, Json}
 import scodec.bits.{ByteVector, BitVector}
 
@@ -69,30 +68,3 @@ object Base64 {
 
   private[transit] def unsafeFrom(str: String): Base64 = new Base64(str)
 }
-
-/**
-  * A type-class to transform a data type A back-and-forth a Base64 encoding.
-  * We want to allow our client to process any kind of data, while hiding
-  * the implementation detail that Vault uses Base64 strings in its API.
-  *
-  * We recommend building instances of this type-class from the Codec class
-  * of the scodec library. http://scodec.org/
-  */
-trait CodecBase64[A] {
-  def toBase64(a: A): Base64
-  def fromBase64(bv: Base64): Either[DecodeBase64Error, A]
-}
-
-object CodecBase64 {
-
-  def apply[A](implicit ev: CodecBase64[A]): CodecBase64[A] = ev
-
-  /** A neutral, identity-like Codec for Base64 data.   */
-  implicit val identityBase64: CodecBase64[Base64] = Base64Base64Impl
-  private object Base64Base64Impl extends CodecBase64[Base64] {
-    def toBase64(bv: Base64): Base64 = bv
-    def fromBase64(bv: Base64): Either[DecodeBase64Error, Base64] = Right(bv)
-  }
-}
-
-final class DecodeBase64Error(msg: String) extends RuntimeException(msg) with NoStackTrace

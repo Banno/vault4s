@@ -44,7 +44,7 @@ object TransitModelsSpec extends Spec with ScalaCheck {
         "plaintext" -> Json.fromString(plaintext.value),
         "context"   -> Json.fromString(context.value)
       )
-      val input = EncryptRequest(plaintext, Some(context))
+      val input = EncryptRequest(PlainText(plaintext), Some(Context(context)))
       input.asJson === expected
     }
 
@@ -63,14 +63,14 @@ object TransitModelsSpec extends Spec with ScalaCheck {
         "ciphertext" -> Json.fromString(ct.ciphertext),
         "context"    -> Json.fromString(context.value)
       )
-      DecryptRequest(ct, Some(context)).asJson === expected
+      DecryptRequest(ct, Some(Context(context))).asJson === expected
     }
 
   val decodeDecryptResponseProp: Prop = Prop.forAll(base64){ (plaintext: Base64) =>
     val json = Json.obj(
       "data" -> Json.obj( "plaintext" -> Json.fromString(plaintext.value))
     )
-    DecryptResponse.decodeDecryptResponse.decodeJson(json) === Right(DecryptResponse(plaintext))
+    DecryptResponse.decodeDecryptResponse.decodeJson(json) === Right(DecryptResponse(PlainText(plaintext)))
   }
 
 }

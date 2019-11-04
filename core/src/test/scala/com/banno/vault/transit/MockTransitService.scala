@@ -27,9 +27,9 @@ import org.http4s.util.CaseInsensitiveString
 class MockTransitService[F[_]: Sync](
   keyname: String, 
   token: String,
-  context: Option[Base64],
+  context: Option[Context],
   encrypted: CipherText,
-  plaintext: Base64
+  plaintext: PlainText
 ) extends Http4sDsl[F] {
 
   private implicit val encryptRequestEntityDecoder: EntityDecoder[F, EncryptRequest] = jsonOf
@@ -65,7 +65,7 @@ class MockTransitService[F[_]: Sync](
             Ok(s"""
               |{
               | "data": {
-              |   "plaintext": "${plaintext.value}"
+              |   "plaintext": "${plaintext.plaintext.value}"
               | }
               |}""".stripMargin)
           else Gone()

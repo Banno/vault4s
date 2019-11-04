@@ -42,7 +42,9 @@ object Transit extends Spec with ScalaCheck with TransitData {
   val encryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
     import testCase.mockClient
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), token, KeyName(keyName))
-    val actual = transit.encryptInContext[Order, Agent](testCase.order, testCase.agent)
+    val plainText = PlainText(Order.toBase64(testCase.order))
+    val context   = Context(Agent.toBase64(testCase.agent))
+    val actual = transit.encryptInContext(plainText, context)
     actual.unsafeRunSync.value === testCase.encrypted
   }
 
@@ -50,22 +52,27 @@ object Transit extends Spec with ScalaCheck with TransitData {
     import testCase.mockClient
     val otoken = token.copy(clientToken = token.clientToken + "X" )
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), otoken, KeyName(keyName))
-    val actual = transit.encryptInContext[Order, Agent](testCase.order, testCase.agent)
+    val plainText = PlainText(Order.toBase64(testCase.order))
+    val context   = Context(Agent.toBase64(testCase.agent))
+    val actual = transit.encryptInContext(plainText, context)
     actual.attempt.unsafeRunSync.isLeft
   }
 
   val decryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
     import testCase.mockClient
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), token, KeyName(keyName))
-    val actual = transit.decryptInContext[Order, Agent](testCase.encrypted, testCase.agent)
-    actual.unsafeRunSync === testCase.order
+    val context   = Context(Agent.toBase64(testCase.agent))
+    val actual = transit.decryptInContext(testCase.encrypted, context)
+      .map(pt => Order.fromBase64(pt.plaintext) )
+    actual.unsafeRunSync === Right(testCase.order)
   }
 
   val decryptForbiddenSpec: Prop = Prop.forAll(genTestCase){ testCase =>
     import testCase.mockClient
     val otoken = token.copy(clientToken = token.clientToken + "X" )
     val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), otoken, KeyName(keyName))
-    val actual = transit.decryptInContext[Order, Agent](testCase.encrypted, testCase.agent)
+    val context   = Context(Agent.toBase64(testCase.agent))
+    val actual = transit.decryptInContext(testCase.encrypted, context)
     actual.attempt.unsafeRunSync.isLeft
   }
 }
@@ -77,15 +84,44 @@ trait TransitData {
 
   case class TestCase(order: Order, agent: Agent, encrypted: CipherText) {
     def mockClient: Client[IO] = Client.fromHttpApp {
-      val context = Some(agentBase64.toBase64(agent))
-      val plain = orderBase64.toBase64(order)
-      new MockTransitService[IO](keyName, "vaultToken", context, encrypted, plain).routes
+      val context = Agent.toBase64(agent)
+      val plain = Order.toBase64(order)
+      new MockTransitService[IO](keyName, "vaultToken", Some(Context(context)), encrypted, PlainText(plain)).routes
     }
   }
 
   // As as hypothetical example of Base64 encoding/decoding, which we use to test complex case
   case class Order(company: String, numShares: Int, price: Int)
+  object Order {
+    private val Pattern = "([a-zA-Z]+),([0-9]+),([0-9]+);".r
+
+    def toBase64(a: Order): Base64 =
+        stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
+
+    def fromBase64(bv: Base64): Either[String, Order] =
+      stringBase64.fromBase64(bv).flatMap {
+        case Pattern(co, nu, pri) => Right(Order(co, nu.toInt, pri.toInt))
+        case str => Left(s"$str is not a valid order coder")
+      }
+
+    implicit val eqOrder: Eq[Order] = Eq.fromUniversalEquals
+  }
+
+
   case class Agent(license: UUID)
+  object Agent {
+    def toBase64(a: Agent): Base64 =
+      stringBase64.toBase64(a.license.toString)
+
+    def fromBase64(bv: Base64): Either[String,Agent] =
+      stringBase64.fromBase64(bv).flatMap { str =>
+        Try(UUID.fromString(str)) match {
+          case Success(value) => Right(Agent(value))
+          case Failure(tr) => Left( tr.getMessage()) 
+        }
+      }
+    implicit val showAgent: Show[Agent] = _.license.toString
+  }
 
   val genOrder: Gen[Order] = for {
     company <- Gen.alphaStr.filterNot(_.isEmpty())
@@ -102,40 +138,11 @@ trait TransitData {
   } yield TestCase(order, agent, encrypted)
 
 
-  object stringBase64 extends CodecBase64[String] {
+  object stringBase64 {
     def toBase64(a: String): Base64 =
       Base64.fromBitVector(StringCodec.utf8.encode(a).getOrElse(???))
-    def fromBase64(bv: Base64): Either[DecodeBase64Error, String] =
+    def fromBase64(bv: Base64): Either[String, String] =
       StringCodec.utf8.decode(BitVector.fromBase64(bv.value).get)
-        .leftMap(s => new DecodeBase64Error(s))
   }
-
-  implicit val orderBase64: CodecBase64[Order] = new CodecBase64[Order] {
-    def toBase64(a: Order): Base64 =
-      stringBase64.toBase64(s"${a.company},${a.numShares},${a.price};")
-
-    private val Pattern = "([a-zA-Z]+),([0-9]+),([0-9]+);".r
-    def fromBase64(bv: Base64): Either[DecodeBase64Error, Order] =
-      stringBase64.fromBase64(bv).flatMap {
-        case Pattern(co, nu, pri) => Right(Order(co, nu.toInt, pri.toInt))
-        case str => Left(new DecodeBase64Error(s"$str is not a valid order coder"))
-      }
-   }
-
-  implicit val eqOrder: Eq[Order] = Eq.fromUniversalEquals
-
-  implicit val agentBase64: CodecBase64[Agent] = new CodecBase64[Agent] {
-    def toBase64(a: Agent): Base64 =
-      stringBase64.toBase64(a.license.toString)
-
-    def fromBase64(bv: Base64): Either[DecodeBase64Error,Agent] =
-      stringBase64.fromBase64(bv).flatMap { str =>
-        Try(UUID.fromString(str)) match {
-          case Success(value) => Right(Agent(value))
-          case Failure(tr) => Left( new DecodeBase64Error(tr.getMessage()) )
-        }
-      }
-   }
-   implicit val showAgent: Show[Agent] = _.license.toString
 
 }
