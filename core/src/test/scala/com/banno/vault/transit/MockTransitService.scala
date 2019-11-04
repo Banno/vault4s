@@ -19,12 +19,13 @@ package com.banno.vault.transit
 import cats.syntax.flatMap._
 import cats.syntax.eq._
 import cats.effect.Sync
+import io.circe.Json
 import org.http4s.dsl.Http4sDsl
 import org.http4s.circe._
 import org.http4s.{EntityDecoder, HttpApp, Request, Response}
 import org.http4s.util.CaseInsensitiveString
 
-class MockTransitService[F[_]: Sync](
+final class MockTransitService[F[_]: Sync](
   keyname: String, 
   token: String,
   context: Option[Context],
@@ -50,24 +51,22 @@ class MockTransitService[F[_]: Sync](
       case req @ POST -> Root / "v1" / "transit" / "encrypt" / `keyname` =>
         req.as[EncryptRequest].flatMap{ case encreq =>
           if (encreq === EncryptRequest(plaintext,context))
-            Ok(s"""
-              |{
-              | "data": {
-              |   "ciphertext": "${encrypted.ciphertext}"
-              | }
-              |}""".stripMargin)
+            Ok( Json.obj(
+              "data" -> Json.obj(
+                "ciphertext" -> Json.fromString(encrypted.ciphertext)
+              )
+            ))
           else
             Gone()
         }
       case req @ POST -> Root / "v1" / "transit" / "decrypt" / `keyname` => 
         req.as[DecryptRequest].flatMap { case decreq => 
           if (decreq === DecryptRequest(encrypted, context))
-            Ok(s"""
-              |{
-              | "data": {
-              |   "plaintext": "${plaintext.plaintext.value}"
-              | }
-              |}""".stripMargin)
+            Ok( Json.obj(
+              "data" -> Json.obj(
+                "plaintext" -> Json.fromString(plaintext.plaintext.value)
+              )
+            ))
           else Gone()
 
         }

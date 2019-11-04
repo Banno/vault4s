@@ -107,7 +107,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: VaultTo
     *
     * https://www.vaultproject.io/api/secret/transit/index.html#read-key
     */
-  def keyDetails: F[KeyDetails] = {
+  val keyDetails: F[KeyDetails] = {
     val request = Request[F](method = GET, uri = readKeyUri, headers = tokenHeaders)
     F.handleErrorWith(client.expect[KeyDetails](request)){ e =>
       F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}".some))

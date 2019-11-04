@@ -16,22 +16,25 @@
 
 package com.banno.vault.transit
 
-import cats.Eq
+import cats.{ApplicativeError, Eq}
 import cats.kernel.instances.string._
+import cats.instances.either._
 import io.circe.{Encoder, Decoder, Json}
 import scodec.bits.{ByteVector, BitVector}
 
 /** A String wrapper class, to ensure that the string inside is a valid
   *  Base64 string, as those used in Vault to represent plaintext and context. 
   */
-final class Base64 private[Base64] (val value: String) extends AnyVal
+final class Base64 private[Base64] (val value: String) extends AnyVal {
+  override def toString = s"Base64($value)"
+}
 
 object Base64 {
 
   implicit val eqBase64: Eq[Base64] = Eq.by[Base64, String](_.value)
 
   implicit final val decodeBase64: Decoder[Base64] =
-    Decoder[String].emap(Base64.fromStringEither)
+    Decoder[String].emap(Base64.fromString[Either[String, ?]])
   implicit final val encodeBase64: Encoder[Base64] =
     Encoder.instance(bv => Json.fromString(bv.value))
 
@@ -58,9 +61,9 @@ object Base64 {
   def fromStringOpt(str: String): Option[Base64] =
     if (isBase64(str)) Some(new Base64(str)) else None
   
-  def fromStringEither(str: String): Either[String, Base64] =
-    if (isBase64(str)) Right(new Base64(str))
-    else Left(s"""The string "$str" is not a valid Base-64 encoded literal""")
+  def fromString[F[_]](str: String)(implicit F: ApplicativeError[F, String]): F[Base64] =
+    if (isBase64(str)) F.pure(new Base64(str))
+    else F.raiseError(s"""The string "$str" is not a valid Base-64 encoded literal""")
 
   def fromByteVector(bv: ByteVector): Base64 = new Base64(bv.toBase64)
 

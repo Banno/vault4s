@@ -22,9 +22,6 @@ import org.scalacheck.Gen
 
 object TransitGenerators extends VaultArbitraries {
 
-  val genChar: Gen[Char] = Gen.choose[Char](Char.MinValue, Char.MaxValue)
-  val genString: Gen[String] = Gen.listOf(genChar).map(_.mkString)
-
   // copied from scodec-bits repository.
   def standardByteVectors(maxSize: Int): Gen[ByteVector] = for {
     size <- Gen.choose(0, maxSize)

@@ -23,30 +23,13 @@ import cats.syntax.eq._
 import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
 
-/** A Cipher or "type" of Key, which indicates the algorithm being used for encrypting or decrypting. */
-sealed abstract class Cipher private (val name: String)
-object Cipher {
-  /* Source: https://www.vaultproject.io/api/secret/transit/index.html#type */
-  case object Aes256Gcm96 extends Cipher("aes256-gcm96")
-  case object ChaCha20Poly1305 extends Cipher("chacha20-poly1305")
-  case object ED25519 extends Cipher("ed25519")
-  case object EcDsaP256 extends Cipher("ecdsa-p256")
-  case object Rsa2048 extends Cipher("rsa-2048")
-  case object Rsa4096 extends Cipher("rsa-4096")
-
-  val values: IndexedSeq[Cipher] = Vector(Aes256Gcm96, ChaCha20Poly1305, ED25519, EcDsaP256, Rsa2048, Rsa4096) 
-
-  def findEither(name: String): Either[String, Cipher] = 
-    values.find( _.name == name).toRight(s"$name is not a known name of a vault type key")
-}
-
 final case class KeyName(name: String)
 final case class KeyDetails(
   name: String,
   isConvergent: Boolean,
   isDerived: Boolean,
   versions: Map[Int, Instant],
-  cipher: Cipher
+  cipher: String
 )
 
 object KeyDetails {
@@ -55,7 +38,7 @@ object KeyDetails {
     (kd: KeyDetails) => Json.obj(
       "data" -> Json.obj(
         "name"                  -> Json.fromString(kd.name),
-        "type"                  -> Json.fromString(kd.cipher.name),
+        "type"                  -> Json.fromString(kd.cipher),
         "convergent_encryption" -> Json.fromBoolean(kd.isConvergent),
         "derived"               -> Json.fromBoolean(kd.isDerived),
         "keys"                  -> Json.fromFields(
@@ -65,9 +48,6 @@ object KeyDetails {
         )
       )
     )
-
-    implicit final val decodeCipher: Decoder[Cipher] = 
-      Decoder.decodeString.emap(Cipher.findEither)
 
     implicit final val decodeKeyDetails: Decoder[KeyDetails] = {
       implicit val decodeInstantSecond: Decoder[Instant] = 
@@ -82,8 +62,8 @@ object KeyDetails {
           c.downField("data").downField("convergent_encryption").as[Boolean],
           c.downField("data").downField("derived").as[Boolean],
           c.downField("data").downField("keys").as[Map[Int, Instant]],
-          c.downField("data").downField("type").as[Cipher],
-        ){ KeyDetails.apply(_,_,_,_,_)}
+          c.downField("data").downField("type").as[String]
+        )(KeyDetails.apply(_,_,_,_,_))
       }
     }
       
@@ -91,7 +71,7 @@ object KeyDetails {
 
 /** A tagged-like newtype used to indicate that a Base64 value is a plaintext we want to encrypt. 
   */
-final case class PlainText(val plaintext: Base64)
+final case class PlainText(plaintext: Base64)
 object PlainText {
   implicit val eqPlainText: Eq[PlainText] =
     Eq.by[PlainText, Base64](_.plaintext)
@@ -107,7 +87,7 @@ object PlainText {
   *
   * https://www.vaultproject.io/docs/secrets/transit/index.html#transit-secrets-engine
   */
-final case class Context(val context: Base64)
+final case class Context(context: Base64)
 object Context {
   implicit val eqContext: Eq[Context] =
     Eq.by[Context, Base64](_.context)
