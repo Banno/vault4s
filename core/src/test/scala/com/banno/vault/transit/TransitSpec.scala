@@ -28,7 +28,7 @@ import org.scalacheck.{Gen, Prop}
 import org.specs2.{ScalaCheck, Spec}
 import org.specs2.specification.core.SpecStructure
 import scala.util.{Failure, Success, Try}
-import scodec.bits.BitVector
+import scodec.bits.ByteVector
 
 object Transit extends Spec with ScalaCheck with TransitData {
   override def is: SpecStructure =
@@ -139,10 +139,10 @@ trait TransitData {
 
 
   object stringBase64 {
-    def toBase64(a: String): Base64 =
-      Base64.fromBitVector(StringCodec.utf8.encode(a).getOrElse(???))
-    def fromBase64(bv: Base64): Either[String, String] =
-      StringCodec.utf8.decode(BitVector.fromBase64(bv.value).get)
+    def toBase64(s: String): Base64 =
+      Base64.fromByteVector(ByteVector.view(s.getBytes("UTF-8")))
+    def fromBase64(b64: Base64): Either[String, String] =
+      ByteVector.fromBase64Descriptive(b64.value).map(bv => new String(bv.toArray, "UTF-8"))
   }
 
 }
