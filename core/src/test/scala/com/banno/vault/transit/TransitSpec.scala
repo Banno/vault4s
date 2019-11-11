@@ -16,7 +16,6 @@
 
 package com.banno.vault.transit
 
-import cats.Show
 import cats.effect.IO
 import cats.implicits._
 import cats.kernel.Eq
@@ -107,7 +106,6 @@ trait TransitData {
     implicit val eqOrder: Eq[Order] = Eq.fromUniversalEquals
   }
 
-
   case class Agent(license: UUID)
   object Agent {
     def toBase64(a: Agent): Base64 =
@@ -120,7 +118,6 @@ trait TransitData {
           case Failure(tr) => Left( tr.getMessage()) 
         }
       }
-    implicit val showAgent: Show[Agent] = _.license.toString
   }
 
   val genOrder: Gen[Order] = for {

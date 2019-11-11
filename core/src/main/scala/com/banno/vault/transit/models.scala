@@ -35,7 +35,7 @@ final case class KeyDetails(
 object KeyDetails {
 
   implicit final val encodeKeyDetails: Encoder[KeyDetails] =
-    (kd: KeyDetails) => Json.obj(
+    Encoder.instance { (kd: KeyDetails) => Json.obj(
       "data" -> Json.obj(
         "name"                  -> Json.fromString(kd.name),
         "type"                  -> Json.fromString(kd.cipher),
@@ -47,7 +47,7 @@ object KeyDetails {
           }
         )
       )
-    )
+    )}
 
     implicit final val decodeKeyDetails: Decoder[KeyDetails] = {
       implicit val decodeInstantSecond: Decoder[Instant] = 
@@ -112,13 +112,14 @@ object CipherText {
 
 private[transit] final case class EncryptRequest(plaintext: PlainText, context: Option[Context])
 private[transit] object EncryptRequest {
-  implicit val eqEncryptRequest: Eq[EncryptRequest] = { (x: EncryptRequest, y: EncryptRequest) =>
-    x.context === y.context && x.plaintext === y.plaintext
-  }
+  implicit val eqEncryptRequest: Eq[EncryptRequest] =
+    Eq.instance { (x: EncryptRequest, y: EncryptRequest) =>
+      x.context === y.context && x.plaintext === y.plaintext
+    }
   implicit val encodeEncryptRequest: Encoder[EncryptRequest] =
     Encoder.forProduct2("plaintext", "context")(er => (er.plaintext, er.context))
   implicit val decodeEncryptRequest: Decoder[EncryptRequest] =
-    Decoder.forProduct2("plaintext", "context")(EncryptRequest.apply(_,_))
+    Decoder.forProduct2("plaintext", "context")((pt: PlainText, ct: Option[Context]) => EncryptRequest(pt,ct))
 }
 
 private[transit] final case class EncryptResponse(ciphertext: CipherText)
@@ -126,25 +127,28 @@ private[transit] object EncryptResponse {
   implicit val eqEncryptResponse: Eq[EncryptResponse] = Eq.by(_.ciphertext)
 
   implicit val encodeEncryptResponse: Encoder[EncryptResponse] =
-    (er: EncryptResponse) => Json.obj( "data" -> 
+    Encoder.instance { (er: EncryptResponse) => Json.obj( "data" ->
       Json.obj("ciphertext" -> Encoder[CipherText].apply(er.ciphertext))
-    )
+    )}
 
-    implicit val decodeEncryptResponse: Decoder[EncryptResponse] =
-    _.downField("data").get[CipherText]("ciphertext").map(EncryptResponse.apply)
+  implicit val decodeEncryptResponse: Decoder[EncryptResponse] =
+    Decoder.instance[EncryptResponse] { c => Decoder.resultInstance.map( 
+      c.downField("data").get[CipherText]("ciphertext")
+    )(ct => EncryptResponse(ct) )}
 }
 
 private[transit] final case class DecryptRequest(ciphertext: CipherText, context: Option[Context])
 private[transit] object DecryptRequest {
-  implicit val eqDecryptResponse: Eq[DecryptRequest] = { 
-    (x: DecryptRequest, y: DecryptRequest) => x.context === y.context && x.ciphertext === y.ciphertext
-  }
+  implicit val eqDecryptResponse: Eq[DecryptRequest] =
+    Eq.instance { (x: DecryptRequest, y: DecryptRequest) =>
+      x.context === y.context && x.ciphertext === y.ciphertext
+    }
 
   implicit val encodeDecryptRequest: Encoder[DecryptRequest] =
     Encoder.forProduct2("ciphertext", "context")(dr => (dr.ciphertext, dr.context))
 
   implicit val decodeDecryptRequest: Decoder[DecryptRequest] =
-    Decoder.forProduct2("ciphertext", "context")(DecryptRequest.apply(_,_))
+    Decoder.forProduct2("ciphertext", "context")((cr: CipherText, ct: Option[Context]) => DecryptRequest(cr, ct))
 }
 
 private[transit] final case class DecryptResponse(plaintext: PlainText)
@@ -153,9 +157,12 @@ private[transit] object DecryptResponse {
     Eq.by[DecryptResponse, PlainText](_.plaintext)
 
   implicit val encodeDecryptResponse: Encoder[DecryptResponse] =
-    (dr: DecryptResponse) => Json.obj(
+    Encoder.instance { (dr: DecryptResponse) => Json.obj(
       "data" -> Json.obj("plaintext" -> Encoder[PlainText].apply(dr.plaintext))
-    )
+    )}
+
   implicit val decodeDecryptResponse: Decoder[DecryptResponse] =
-    _.downField("data").get[PlainText]("plaintext").map(DecryptResponse.apply(_))
+    Decoder.instance[DecryptResponse] { c => Decoder.resultInstance.map(
+      c.downField("data").get[PlainText]("plaintext")
+    )(pt => DecryptResponse(pt)) }
 }
