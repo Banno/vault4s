@@ -57,6 +57,17 @@ object Transit {
       : F[CipherText] =
     new TransitClient[F](client, vaultUri, token, key).encryptInContext(plaintext, context)
 
+  /**  Function to encrypt data.
+    *
+    *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
+    *  https://www.vaultproject.io/api/secret/transit/index.html#batch_input
+    */
+  def encryptBatch[F[_]: Sync]
+    (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
+    (plaintexts: List[PlainText])
+      : F[List[TransitError.Or[CipherText]]] =
+    new TransitClient[F](client, vaultUri, token, key).encryptBatch(plaintexts)
+
   /**  Function to decrypt data.
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
@@ -77,6 +88,33 @@ object Transit {
       : F[PlainText] =
     new TransitClient[F](client, vaultUri, token, key).decryptInContext(cipherText, context)
 
+  /**  Function to decrypt data, given some context information.
+    *
+    *  https://www.vaultproject.io/api/secret/transit/index.html#batch_input-2
+    *
+    *  Returns a list of the results, where each entry in the list is the result of attempting to decrypt the ciphertext
+    *  that was located at the same position in the input. The result is either an error, if something went wrong
+    *  with this particular CipherText, or the PlainText.
+    */
+  def decryptBatch[F[_]: Sync]
+    (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
+    (cipherTexts: List[CipherText])
+      : F[List[TransitError.Or[PlainText]]] =
+    new TransitClient[F](client, vaultUri, token, key).decryptBatch(cipherTexts)
+
+  /**  Function to decrypt a batch of data, where each ciphertext is accompanied by its context information.
+      *
+      *  https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
+      *
+      *  Returns a list of the results, where each entry in the list is the result of attempting to decrypt the ciphertext
+      *  that was located at the same position in the input. The result is either an error, if something went wrong
+      *  with this particular input pair of CipherText and Context, or with the PlainText.
+      */
+  def decryptBatchInContext[F[_]: Sync]
+    (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
+    (inputs: List[(CipherText, Context)])
+      : F[List[TransitError.Or[PlainText]]] =
+    new TransitClient[F](client, vaultUri, token, key).decryptBatchInContext(inputs)
 
 }
 
@@ -90,6 +128,8 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   private implicit val encryptResponseEntityDecoder: EntityDecoder[F, EncryptResponse] = jsonOf
   private implicit val decryptResponseEntityDecoder: EntityDecoder[F, DecryptResponse] = jsonOf
   private implicit val keyEntityDecoder: EntityDecoder[F, KeyDetails] = jsonOf
+  private implicit val ebred: EntityDecoder[F, EncryptBatchResponse] = jsonOf
+  private implicit val dbred: EntityDecoder[F, DecryptBatchResponse] = jsonOf[F, DecryptBatchResponse]
 
   /* The URIs we use here are those from the transit documentation.
    * the v1 prefix is specified in https://www.vaultproject.io/api/overview
@@ -110,7 +150,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   val keyDetails: F[KeyDetails] = {
     val request = Request[F](method = GET, uri = readKeyUri, headers = tokenHeaders)
     F.handleErrorWith(client.expect[KeyDetails](request)){ e =>
-      F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}".some))
+      F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=GetKey".some))
     }
   }
 
@@ -123,7 +163,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
     val request = doRequest(encryptUri, encryptReq)
     for {
       response <- F.handleErrorWith(client.expect[EncryptResponse](request)){ e =>
-        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}".some))
+        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=EncryptOne, no context".some))
       }
     } yield response.data.ciphertext
   }
@@ -137,20 +177,55 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
     val request = doRequest(encryptUri, encryptReq)
     for {
       response <- F.handleErrorWith(client.expect[EncryptResponse](request)){ e =>
-        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, context = ${context.context.value}".some))
+        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=EncryptOne, context = ${context.context.value}".some))
       }
     } yield response.data.ciphertext
+  }
+
+  /** Function to encrypt a batch of data, without any context.
+    *
+    * When encrypting a batch of data, transit may work ok for some inputs, but fail for others.
+    * That is why the result is a list where each element is either a failed message or a CipherText
+    *
+    * https://www.vaultproject.io/api/secret/transit/index.html#batch_input
+    */
+  def encryptBatch(plaintexts: List[PlainText]): F[List[TransitError.Or[CipherText]]] = {
+    val request = doRequest(encryptUri, EncryptBatchRequest(plaintexts.map(EncryptRequest(_, None))))
+    for {
+      results <- F.handleErrorWith(client.expect[EncryptBatchResponse](request).map(_.batchResults)) {
+        case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=EncryptBatch, no context".some))
+      }
+      _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {
+        VaultRequestError(request, None, s"keyName=${key.name}, operation=EncryptBatch without context, all requests failed".some)
+      }
+    } yield results.map(_.map(_.ciphertext))
+  }
+
+  /** Function to encrypt a batch of context-plaintext pairs in a single trip.
+    *
+    * https://www.vaultproject.io/api/secret/transit/index.html#batch_input
+    */
+  def encryptInContextBatch(inputs: List[(PlainText, Context)]): F[List[TransitError.Or[CipherText]]] = {
+    val payload = EncryptBatchRequest(inputs.map { case (pt, ctx) => EncryptRequest(pt, Some(ctx)) })
+    val request = doRequest(encryptUri, payload)
+    for {
+      results <- F.handleErrorWith(client.expect[EncryptBatchResponse](request).map(_.batchResults)) {
+        case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=EncryptBatch with context".some))
+      }
+      _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {
+        VaultRequestError(request, None, s"keyName=${key.name}, operation=EncryptBatch with context, all requests failed".some)
+      }
+    } yield results.map(_.map(_.ciphertext))
   }
 
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
    *
    */
   def decrypt(cipherText: CipherText): F[PlainText] = {
-    val decryptReq = DecryptRequest(cipherText, None)
-    val request = doRequest(decryptUri, decryptReq)
+    val request = doRequest(decryptUri, DecryptRequest(cipherText, None))
     for {
       response <- F.handleErrorWith(client.expect[DecryptResponse](request)){ e =>
-        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}".some))
+        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=DecryptOne, no context".some))
       }
     } yield response.data.plaintext
   }
@@ -164,9 +239,47 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
     for {
       response <- F.handleErrorWith(client.expect[DecryptResponse](request)){ e =>
         val showCtx = context.context.value
-        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, context = $showCtx".some))
+        F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=DecryptOne, context = $showCtx".some))
       }
     } yield response.data.plaintext
+  }
+
+  /** Decrypts a batch of input ciphertexts using a single round-trip to the Vault server.
+    * Returns a list where each entry is the attempted result of decrypting the ciphertext at the same position.
+    * That result may be either a Transit error or the plaintext, if it failed or succeeded for that ciphertext.
+    *
+    * https://www.vaultproject.io/api/secret/transit/index.html#batch_input-2
+    */
+  def decryptBatch(inputs: List[CipherText]): F[List[TransitError.Or[PlainText]]] = {
+    val payload = DecryptBatchRequest(inputs.map((cipht: CipherText) => DecryptRequest(cipht, None)))
+    val request = doRequest(decryptUri, payload)
+    for {
+      results <- F.handleErrorWith(client.expect[DecryptBatchResponse](request).map(_.batchResults)){
+        case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=DecryptBatch without context".some))
+      }
+      _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {
+        VaultRequestError(request, None, s"keyName=${key.name}, operation=DecryptBatch without context, all requests failed".some)
+      }
+    } yield results.map(_.map(_.plaintext))
+  }
+
+  /** Decrypts a batch of input pairs (ciphertexts and contexts) using a single round-trip to the Vault server.
+    * Returns a list where each entry is the attempted result of decrypting the input at the same position.
+    * That result may be either a Transit error or the plaintext.
+    *
+    *  https://www.vaultproject.io/api/secret/transit/index.html#batch_input-2
+    */
+  def decryptBatchInContext(inputs: List[(CipherText, Context)]): F[List[TransitError.Or[PlainText]]] = {
+    val payload = DecryptBatchRequest(inputs.map { case (cipht, ctx) => DecryptRequest(cipht, Some(ctx)) } )
+    val request = doRequest(decryptUri, payload)
+    for {
+      results <- F.handleErrorWith(client.expect[DecryptBatchResponse](request).map(_.batchResults)){
+        case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=DecryptBatch with context".some))
+      }
+      _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {
+        VaultRequestError(request, None, s"keyName=${key.name}, operation=DecryptBatch with context, all requests failed".some)
+      }
+    } yield results.map(_.map(_.plaintext))
   }
 
 }

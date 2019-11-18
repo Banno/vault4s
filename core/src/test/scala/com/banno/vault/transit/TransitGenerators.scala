@@ -32,7 +32,36 @@ object TransitGenerators extends VaultArbitraries {
 
   val base64: Gen[Base64] = byteVector.map(Base64.fromByteVector)
 
-  // we generate examples like we have seen so far: a base64-encoded literal, prefixed by `vault:v1:` 
+  // we generate examples like we have seen so far: a base64-encoded literal, prefixed by `vault:v1:`
   val cipherText: Gen[CipherText] = base64.map( x => CipherText(s"vault:v1:${x.value}"))
+  val plaintext: Gen[PlainText] = base64.map( (p: Base64) => PlainText(p))
+  val context: Gen[Context] = base64.map( (p: Base64) => Context(p))
+
+  val transitError: Gen[TransitError] = Gen.alphaNumStr.map( (s: String) => TransitError(s))
+
+  val genEncryptRequest: Gen[EncryptRequest] =
+    for { pt <- plaintext ; ctx <- context } yield EncryptRequest(pt, Some(ctx))
+
+  val encryptResult: Gen[EncryptResult] = 
+    cipherText.map((p: CipherText) => EncryptResult(p))
+
+  val genEncryptBatchRequest: Gen[EncryptBatchRequest] =
+    Gen.listOf(genEncryptRequest).map(ps => EncryptBatchRequest(ps))
+ 
+  val genAllRightEncryptBatchResponse: Gen[EncryptBatchResponse] =
+    Gen.listOf(right[TransitError, EncryptResult](encryptResult))
+      .map( (rps: List[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+
+  val genEncryptBatchResponse: Gen[EncryptBatchResponse] =
+    Gen.listOf(errorOr(encryptResult))
+      .map((rps: List[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+
+  def some[A](genA: Gen[A]): Gen[Option[A]] = genA.map( (a:A) => Some(a) )
+  def right[A, B](genB: Gen[B]): Gen[Either[A, B]] = genB.map(b => Right(b))
+
+  def errorOr[A](genA: Gen[A]): Gen[TransitError.Or[A]] = either(transitError, genA)
+
+  def either[T, U](gt: Gen[T], gu: Gen[U]): Gen[Either[T, U]] =
+    Gen.oneOf(gt.map(Left(_)), gu.map(Right(_)))
 
 }

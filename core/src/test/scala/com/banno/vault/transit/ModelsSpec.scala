@@ -22,6 +22,7 @@ import org.specs2.{Spec, ScalaCheck}
 import org.specs2.specification.core.SpecStructure
 import org.scalacheck.Prop
 import io.circe.syntax._ 
+import org.scalacheck.Gen
 
 object TransitModelsSpec extends Spec with ScalaCheck {
   import TransitGenerators._
@@ -48,6 +49,11 @@ object TransitModelsSpec extends Spec with ScalaCheck {
       input.asJson === expected
     }
 
+  val decodeEncryptResultProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
+    val json = Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))
+    EncryptResult.decodeEncryptResult.decodeJson(json) === Right(EncryptResult(ct))
+  }
+
   val decodeEncryptResponseProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
     val json = Json.obj(
       "data" -> Json.obj(
@@ -66,11 +72,47 @@ object TransitModelsSpec extends Spec with ScalaCheck {
       DecryptRequest(ct, Some(Context(context))).asJson === expected
     }
 
+  val decodeDecryptResultProp: Prop = Prop.forAll(base64){ (pt: Base64) =>
+    val json = Json.obj("plaintext" -> Json.fromString(pt.value))
+    DecryptResult.decodeDecryptResult.decodeJson(json) === Right(DecryptResult(PlainText(pt)))
+  }
+
   val decodeDecryptResponseProp: Prop = Prop.forAll(base64){ (plaintext: Base64) =>
     val json = Json.obj(
       "data" -> Json.obj( "plaintext" -> Json.fromString(plaintext.value))
     )
     DecryptResponse.decodeDecryptResponse.decodeJson(json) === Right(DecryptResponse(DecryptResult(PlainText(plaintext))))
+  }
+
+  val encodeEncryptBatchRequestProp: Prop = Prop.forAll(genEncryptBatchRequest){ (ebr: EncryptBatchRequest) => 
+    ebr.asJson === Json.obj( "batch_input" -> 
+      Json.arr( ebr.batchInput.map { 
+        case EncryptRequest(PlainText(pt), None) => 
+          Json.obj(
+            "plaintext" -> Json.fromString(pt.value)
+          )
+        case EncryptRequest(PlainText(pt), Some(Context(ctx))) => 
+          Json.obj (
+            "plaintext" -> Json.fromString(pt.value),
+            "context" -> Json.fromString(ctx.value)
+          )
+      }: _*)
+    )
+  }
+
+  val encodeEncryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(cipherText)){ cts =>
+    val json = Json.obj("batch_response" -> Json.arr(
+      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))): _*
+    ))
+    EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
+  }
+
+  val decodeDecryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(base64)){ (plaintexts: List[Base64]) =>
+    val json = Json.obj( "batch_response" -> Json.arr(
+      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson): _*
+    ))
+    val expected = DecryptBatchResponse(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
+    DecryptBatchResponse.decodeDecryptBatchResponse.decodeJson(json) === Right(expected)
   }
 
 }
