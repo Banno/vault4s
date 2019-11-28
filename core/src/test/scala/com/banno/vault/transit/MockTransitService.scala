@@ -16,25 +16,27 @@
 
 package com.banno.vault.transit
 
-import cats.syntax.flatMap._
 import cats.syntax.eq._
+import cats.instances.option._
 import cats.effect.Sync
 import io.circe.Json
 import org.http4s.dsl.Http4sDsl
 import org.http4s.circe._
-import org.http4s.{EntityDecoder, HttpApp, Request, Response}
+import org.http4s.{DecodeFailure, EntityDecoder, HttpApp, Request, Response}
 import org.http4s.util.CaseInsensitiveString
+import cats.data.EitherT
 
 final class MockTransitService[F[_]: Sync](
   keyname: String, 
   token: String,
-  context: Option[Context],
-  encrypted: CipherText,
-  plaintext: PlainText
+  encryptCase: EncryptCase,
+  batchCases: List[EncryptCase]
 ) extends Http4sDsl[F] {
 
   private implicit val encryptRequestEntityDecoder: EntityDecoder[F, EncryptRequest] = jsonOf
   private implicit val decryptRequestEntityDecoder: EntityDecoder[F, DecryptRequest] = jsonOf
+  private implicit val encryptBatchRequestEntityDecoder: EntityDecoder[F, EncryptBatchRequest] = jsonOf
+  private implicit val decryptBatchRequestEntityDecoder: EntityDecoder[F, DecryptBatchRequest] = jsonOf
 
   private def findVaultToken(req: Request[F]): Option[String] =
     req.headers.find(_.name == CaseInsensitiveString("X-Vault-Token")).map(_.value)
@@ -46,31 +48,71 @@ final class MockTransitService[F[_]: Sync](
       case Some(_) => Forbidden(""" {"errors": [ "permission denied"] }""")
     }
 
-  val routes: HttpApp[F] = HttpApp.apply[F] { req => 
+  val routes: HttpApp[F] = HttpApp.apply[F] { req =>
     checkVaultToken(req){ req match {
       case req @ POST -> Root / "v1" / "transit" / "encrypt" / `keyname` =>
-        req.as[EncryptRequest].flatMap{ case encreq =>
-          if (encreq === EncryptRequest(plaintext,context))
-            Ok( Json.obj(
-              "data" -> Json.obj(
-                "ciphertext" -> Json.fromString(encrypted.ciphertext)
-              )
-            ))
-          else
-            Gone()
-        }
+        ( encryptOne(req) orElse encryptBatch(req)) getOrElseF NotFound()
       case req @ POST -> Root / "v1" / "transit" / "decrypt" / `keyname` => 
-        req.as[DecryptRequest].flatMap { case decreq => 
-          if (decreq === DecryptRequest(encrypted, context))
-            Ok( Json.obj(
-              "data" -> Json.obj(
-                "plaintext" -> Json.fromString(plaintext.plaintext.value)
-              )
-            ))
-          else Gone()
-
-        }
+        (decryptOne(req) orElse decryptBatch(req)) getOrElseF NotFound()
       case _ => NotFound()
     }}
   }
+
+
+  private def encryptResult(ct: CipherText): Json = 
+    Json.obj("ciphertext" -> Json.fromString(ct.ciphertext) )
+
+  private def decryptResult(pt: PlainText): Json = 
+    Json.obj("plaintext" -> Json.fromString(pt.plaintext.value) )
+
+  private def error(str: String): Json = 
+    Json.obj("error" -> Json.fromString(str))
+
+  private def encryptOne(req: Request[F]): EitherT[F, DecodeFailure, Response[F]] = 
+    req.attemptAs[EncryptRequest].semiflatMap { case encReq =>
+      if (encryptCase.matches(encReq))
+        Ok( Json.obj("data" -> encryptResult(encryptCase.ciphertext)))
+      else
+        Gone()
+    }
+  
+  private def decryptOne(req: Request[F]): EitherT[F, DecodeFailure, Response[F]] = 
+    req.attemptAs[DecryptRequest].semiflatMap { case decreq => 
+      if (encryptCase.matches(decreq))
+        Ok( Json.obj("data" -> decryptResult(encryptCase.plaintext)))
+      else Gone()
+    }
+
+  private def decryptBatch(req: Request[F]): EitherT[F, DecodeFailure, Response[F]] = 
+    req.attemptAs[DecryptBatchRequest].semiflatMap { case DecryptBatchRequest(inputs) => 
+      val results: List[Json] = inputs.map { case decreq =>
+        batchCases.find(_.matches(decreq)) match {
+          case None => error("Not known for this context or ciphertext")
+          case Some(bc) => decryptResult(bc.plaintext)
+        }
+      }
+      Ok(Json.obj("batch_results" -> Json.arr(results: _*)))
+    }
+
+  private def encryptBatch(req: Request[F]): EitherT[F, DecodeFailure, Response[F]] = 
+    req.attemptAs[EncryptBatchRequest].semiflatMap { case EncryptBatchRequest(inputs) =>
+      val results: List[Json] = inputs.map { case encReq => 
+        batchCases.find(_.matches(encReq)) match {
+          case None => error("Not known for this context or plaintext")
+          case Some(bc) => encryptResult(bc.ciphertext)
+        }
+      }
+      Ok(Json.obj("batch_results" -> Json.arr(results: _*)))
+    }
+}
+
+final case class EncryptCase(
+  plaintext: PlainText,
+  context: Option[Context],
+  ciphertext: CipherText
+){
+  def matches(req: EncryptRequest): Boolean = 
+    req.plaintext === plaintext && req.context === context
+  def matches(req: DecryptRequest): Boolean = 
+    req.ciphertext === ciphertext && req.context === context
 }

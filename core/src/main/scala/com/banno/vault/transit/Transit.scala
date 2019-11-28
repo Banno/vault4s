@@ -114,7 +114,7 @@ object Transit {
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (inputs: List[(CipherText, Context)])
       : F[List[TransitError.Or[PlainText]]] =
-    new TransitClient[F](client, vaultUri, token, key).decryptBatchInContext(inputs)
+    new TransitClient[F](client, vaultUri, token, key).decryptInContextBatch(inputs)
 
 }
 
@@ -269,7 +269,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#batch_input-2
     */
-  def decryptBatchInContext(inputs: List[(CipherText, Context)]): F[List[TransitError.Or[PlainText]]] = {
+  def decryptInContextBatch(inputs: List[(CipherText, Context)]): F[List[TransitError.Or[PlainText]]] = {
     val payload = DecryptBatchRequest(inputs.map { case (cipht, ctx) => DecryptRequest(cipht, Some(ctx)) } )
     val request = doRequest(decryptUri, payload)
     for {
