@@ -86,7 +86,7 @@ object TransitModelsSpec extends Spec with ScalaCheck {
 
   val encodeEncryptBatchRequestProp: Prop = Prop.forAll(genEncryptBatchRequest){ (ebr: EncryptBatchRequest) => 
     ebr.asJson === Json.obj( "batch_input" -> 
-      Json.arr( ebr.batchInput.map { 
+      Json.fromValues( ebr.batchInput.map { 
         case EncryptRequest(PlainText(pt), None) => 
           Json.obj(
             "plaintext" -> Json.fromString(pt.value)
@@ -96,20 +96,20 @@ object TransitModelsSpec extends Spec with ScalaCheck {
             "plaintext" -> Json.fromString(pt.value),
             "context" -> Json.fromString(ctx.value)
           )
-      }: _*)
+      })
     )
   }
 
   val encodeEncryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(cipherText)){ cts =>
-    val json = Json.obj("batch_response" -> Json.arr(
-      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))): _*
+    val json = Json.obj("batch_response" -> Json.fromValues(
+      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext)))
     ))
     EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
   }
 
   val decodeDecryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(base64)){ (plaintexts: List[Base64]) =>
-    val json = Json.obj( "batch_response" -> Json.arr(
-      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson): _*
+    val json = Json.obj( "batch_response" -> Json.fromValues(
+      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson)
     ))
     val expected = DecryptBatchResponse(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
     DecryptBatchResponse.decodeDecryptBatchResponse.decodeJson(json) === Right(expected)

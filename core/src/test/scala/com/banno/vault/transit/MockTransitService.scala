@@ -91,7 +91,7 @@ final class MockTransitService[F[_]: Sync](
           case Some(bc) => decryptResult(bc.plaintext)
         }
       }
-      Ok(Json.obj("batch_results" -> Json.arr(results: _*)))
+      Ok(Json.obj("batch_results" -> Json.fromValues(results)))
     }
 
   private def encryptBatch(req: Request[F]): EitherT[F, DecodeFailure, Response[F]] = 
@@ -102,7 +102,7 @@ final class MockTransitService[F[_]: Sync](
           case Some(bc) => encryptResult(bc.ciphertext)
         }
       }
-      Ok(Json.obj("batch_results" -> Json.arr(results: _*)))
+      Ok(Json.obj("batch_results" -> Json.fromValues(results)))
     }
 }
 
