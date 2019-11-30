@@ -1,4 +1,4 @@
-val http4sV = "0.21.0-M5"
+val http4sV = "0.21.0-M6"
 
 val specs2V = "4.8.1"
 
