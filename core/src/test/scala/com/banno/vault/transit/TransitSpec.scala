@@ -28,18 +28,19 @@ import org.specs2.specification.core.SpecStructure
 import scala.util.{Failure, Success, Try}
 import scodec.bits.ByteVector
 
-object Transit extends Spec with ScalaCheck with TransitData {
+object TransitSpec extends Spec with ScalaCheck with TransitData {
   override def is: SpecStructure =
    s2"""
      | encrypt works as expected when sending valid data $encryptSpec
      | encrypt fails if the token is not recognised      $encryptForbiddenSpec
      | decrypt works as expected when sending valid data $decryptSpec
      | decrypt fails if the token is not recognised      $decryptForbiddenSpec
+     | encryptBatch may work for all inputs              $encryptBatchAllFineSpec
+     | decryptBatch may work for all inputs              $decryptBatchAllFineSpec
      """.stripMargin
 
   val encryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
-    import testCase.mockClient
-    val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), token, KeyName(keyName))
+    val transit = new TransitClient[IO](testCase.singleMockClient, testUri, token, KeyName(keyName))
     val plainText = PlainText(Order.toBase64(testCase.order))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.encryptInContext(plainText, context)
@@ -47,9 +48,8 @@ object Transit extends Spec with ScalaCheck with TransitData {
   }
 
   val encryptForbiddenSpec: Prop = Prop.forAll(genTestCase){ testCase =>
-    import testCase.mockClient
     val otoken = token + "X"
-    val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), otoken, KeyName(keyName))
+    val transit = new TransitClient[IO](testCase.singleMockClient, testUri, otoken, KeyName(keyName))
     val plainText = PlainText(Order.toBase64(testCase.order))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.encryptInContext(plainText, context)
@@ -57,8 +57,7 @@ object Transit extends Spec with ScalaCheck with TransitData {
   }
 
   val decryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
-    import testCase.mockClient
-    val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), token, KeyName(keyName))
+    val transit = new TransitClient[IO](testCase.singleMockClient, testUri, token, KeyName(keyName))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.decryptInContext(testCase.encrypted, context)
       .map(pt => Order.fromBase64(pt.plaintext) )
@@ -66,25 +65,50 @@ object Transit extends Spec with ScalaCheck with TransitData {
   }
 
   val decryptForbiddenSpec: Prop = Prop.forAll(genTestCase){ testCase =>
-    import testCase.mockClient
     val otoken = token + "X"
-        val transit = new TransitClient[IO](mockClient, Uri.uri("http://vault.test.com"), otoken, KeyName(keyName))
+    val transit = new TransitClient[IO](testCase.singleMockClient, testUri, otoken, KeyName(keyName))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.decryptInContext(testCase.encrypted, context)
     actual.attempt.unsafeRunSync.isLeft
   }
+
+  val encryptBatchAllFineSpec: Prop = Prop.forAll(Gen.nonEmptyListOf(genTestCase)){ testCases => 
+    val encCases = testCases.map(_.encryptCase)
+    val mockClient = Client.fromHttpApp { 
+      new MockTransitService[IO](keyName, "vaultToken", encCases.head, encCases).routes
+    }
+    val transit = new TransitClient[IO](mockClient, testUri, token, KeyName(keyName))
+    val inputs = testCases.map( tc => (tc.plaintext, tc.context))
+    val actual = transit.encryptInContextBatch(inputs).attempt.unsafeRunSync()
+    actual.isRight &&
+      actual.forall(_.forall(_.isRight)) &&
+      actual.forall(_.zip(testCases).forall { case (res, inp) => res === Right(inp.encrypted) })
+  }
+
+  val decryptBatchAllFineSpec: Prop = Prop.forAll(Gen.nonEmptyListOf(genTestCase)){ testCases => 
+    val encCases = testCases.map(_.encryptCase)
+    val mockClient = Client.fromHttpApp { 
+      new MockTransitService[IO](keyName, "vaultToken", encCases.head, encCases).routes
+    }
+    val transit = new TransitClient[IO](mockClient, testUri, token, KeyName(keyName))
+    val inputs = testCases.map( tc => (tc.encrypted, tc.context))
+    val actual = transit.decryptInContextBatch(inputs).attempt.unsafeRunSync()
+    actual.isRight &&
+      actual.forall(_.forall(_.isRight)) &&
+      actual.forall(_.zip(testCases).forall { case (res, inp) => res === Right(inp.plaintext) })
+  }
 }
 
 trait TransitData {
-
   val keyName = "testingKey"
   val token = "vaultToken"
 
   case class TestCase(order: Order, agent: Agent, encrypted: CipherText) {
-    def mockClient: Client[IO] = Client.fromHttpApp {
-      val context = Agent.toBase64(agent)
-      val plain = Order.toBase64(order)
-      new MockTransitService[IO](keyName, "vaultToken", Some(Context(context)), encrypted, PlainText(plain)).routes
+    val plaintext = PlainText(Order.toBase64(order))
+    val context = Context(Agent.toBase64(agent))
+    def encryptCase: EncryptCase = EncryptCase(plaintext, Some(context), encrypted)
+    def singleMockClient: Client[IO] = Client.fromHttpApp {
+      new MockTransitService[IO](keyName, "vaultToken", encryptCase, Nil).routes
     }
   }
 
@@ -133,7 +157,6 @@ trait TransitData {
     agent <- genAgent
   } yield TestCase(order, agent, encrypted)
 
-
   object stringBase64 {
     def toBase64(s: String): Base64 =
       Base64.fromByteVector(ByteVector.view(s.getBytes("UTF-8")))
@@ -141,4 +164,5 @@ trait TransitData {
       ByteVector.fromBase64Descriptive(b64.value).map(bv => new String(bv.toArray, "UTF-8"))
   }
 
+  val testUri: Uri =  Uri.uri("http://vault.test.com")
 }
