@@ -17,7 +17,10 @@
 package com.banno.vault.transit
 
 import cats.Eq
-import cats.kernel.instances.all._
+import cats.kernel.instances.option._
+import cats.kernel.instances.string._
+import cats.kernel.instances.list._
+import cats.kernel.instances.either._
 import cats.syntax.eq._
 import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
