@@ -201,7 +201,7 @@ private[transit] object DecryptResponse {
     Decoder.forProduct1("data")((d: DecryptResult) => DecryptResponse(d))
 }
 
-private[transit] final case class TransitError(error: String)
+final case class TransitError(error: String)
 private[transit] object TransitError {
   type Or[A] = Either[TransitError, A]
 
