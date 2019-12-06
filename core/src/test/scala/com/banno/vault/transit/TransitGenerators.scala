@@ -16,11 +16,15 @@
 
 package com.banno.vault.transit
 
+import cats.data.NonEmptyList
 import com.banno.vault.VaultArbitraries
 import scodec.bits.ByteVector
 import org.scalacheck.Gen
 
 object TransitGenerators extends VaultArbitraries {
+
+  def nelGen[A](base: Gen[A]): Gen[NonEmptyList[A]] =
+    Gen.nonEmptyListOf(base).map((xs: List[A]) => NonEmptyList.fromListUnsafe(xs))
 
   // copied from scodec-bits repository.
   def standardByteVectors(maxSize: Int): Gen[ByteVector] = for {
@@ -46,15 +50,15 @@ object TransitGenerators extends VaultArbitraries {
     cipherText.map((p: CipherText) => EncryptResult(p))
 
   val genEncryptBatchRequest: Gen[EncryptBatchRequest] =
-    Gen.listOf(genEncryptRequest).map(ps => EncryptBatchRequest(ps))
+    nelGen(genEncryptRequest).map(ps => EncryptBatchRequest(ps))
  
   val genAllRightEncryptBatchResponse: Gen[EncryptBatchResponse] =
-    Gen.listOf(right[TransitError, EncryptResult](encryptResult))
-      .map( (rps: List[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+    nelGen(right[TransitError, EncryptResult](encryptResult))
+      .map( (rps: NonEmptyList[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
 
   val genEncryptBatchResponse: Gen[EncryptBatchResponse] =
-    Gen.listOf(errorOr(encryptResult))
-      .map((rps: List[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+    nelGen(errorOr(encryptResult))
+      .map((rps: NonEmptyList[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
 
   def some[A](genA: Gen[A]): Gen[Option[A]] = genA.map( (a:A) => Some(a) )
   def right[A, B](genB: Gen[B]): Gen[Either[A, B]] = genB.map(b => Right(b))
