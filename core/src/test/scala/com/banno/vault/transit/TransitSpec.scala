@@ -16,6 +16,7 @@
 
 package com.banno.vault.transit
 
+import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.implicits._
 import cats.kernel.Eq
@@ -38,6 +39,8 @@ object TransitSpec extends Spec with ScalaCheck with TransitData {
      | encryptBatch may work for all inputs              $encryptBatchAllFineSpec
      | decryptBatch may work for all inputs              $decryptBatchAllFineSpec
      """.stripMargin
+
+  import TransitGenerators.nelGen
 
   val encryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
     val transit = new TransitClient[IO](testCase.singleMockClient, testUri, token, KeyName(keyName))
@@ -72,30 +75,30 @@ object TransitSpec extends Spec with ScalaCheck with TransitData {
     actual.attempt.unsafeRunSync.isLeft
   }
 
-  val encryptBatchAllFineSpec: Prop = Prop.forAll(Gen.nonEmptyListOf(genTestCase)){ testCases => 
+  val encryptBatchAllFineSpec: Prop = Prop.forAll(nelGen(genTestCase)){ testCases => 
     val encCases = testCases.map(_.encryptCase)
     val mockClient = Client.fromHttpApp { 
-      new MockTransitService[IO](keyName, "vaultToken", encCases.head, encCases).routes
+      new MockTransitService[IO](keyName, "vaultToken", encCases).routes
     }
     val transit = new TransitClient[IO](mockClient, testUri, token, KeyName(keyName))
     val inputs = testCases.map( tc => (tc.plaintext, tc.context))
     val actual = transit.encryptInContextBatch(inputs).attempt.unsafeRunSync()
     actual.isRight &&
       actual.forall(_.forall(_.isRight)) &&
-      actual.forall(_.zip(testCases).forall { case (res, inp) => res === Right(inp.encrypted) })
+      actual.forall(_.toList.zip(testCases.toList).forall { case (res, inp) => res === Right(inp.encrypted) })
   }
 
-  val decryptBatchAllFineSpec: Prop = Prop.forAll(Gen.nonEmptyListOf(genTestCase)){ testCases => 
+  val decryptBatchAllFineSpec: Prop = Prop.forAll(nelGen(genTestCase)){ testCases => 
     val encCases = testCases.map(_.encryptCase)
     val mockClient = Client.fromHttpApp { 
-      new MockTransitService[IO](keyName, "vaultToken", encCases.head, encCases).routes
+      new MockTransitService[IO](keyName, "vaultToken", encCases).routes
     }
     val transit = new TransitClient[IO](mockClient, testUri, token, KeyName(keyName))
     val inputs = testCases.map( tc => (tc.encrypted, tc.context))
     val actual = transit.decryptInContextBatch(inputs).attempt.unsafeRunSync()
     actual.isRight &&
       actual.forall(_.forall(_.isRight)) &&
-      actual.forall(_.zip(testCases).forall { case (res, inp) => res === Right(inp.plaintext) })
+      actual.forall(_.toList.zip(testCases.toList).forall { case (res, inp) => res === Right(inp.plaintext) })
   }
 }
 
@@ -108,7 +111,7 @@ trait TransitData {
     val context = Context(Agent.toBase64(agent))
     def encryptCase: EncryptCase = EncryptCase(plaintext, Some(context), encrypted)
     def singleMockClient: Client[IO] = Client.fromHttpApp {
-      new MockTransitService[IO](keyName, "vaultToken", encryptCase, Nil).routes
+      new MockTransitService[IO](keyName, "vaultToken", NonEmptyList.of(encryptCase)).routes
     }
   }
 

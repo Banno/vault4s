@@ -17,12 +17,12 @@
 package com.banno.vault.transit
 
 import io.circe.Json
+import cats.data.NonEmptyList
 import cats.implicits._
 import org.specs2.{Spec, ScalaCheck}
 import org.specs2.specification.core.SpecStructure
 import org.scalacheck.Prop
 import io.circe.syntax._ 
-import org.scalacheck.Gen
 
 object TransitModelsSpec extends Spec with ScalaCheck {
   import TransitGenerators._
@@ -96,20 +96,20 @@ object TransitModelsSpec extends Spec with ScalaCheck {
             "plaintext" -> Json.fromString(pt.value),
             "context" -> Json.fromString(ctx.value)
           )
-      })
+      }.toList)
     )
   }
 
-  val encodeEncryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(cipherText)){ cts =>
+  val encodeEncryptBatchResponseProp: Prop = Prop.forAll(nelGen(cipherText)){ cts =>
     val json = Json.obj("batch_response" -> Json.fromValues(
-      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext)))
+      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))).toList
     ))
     EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
   }
 
-  val decodeDecryptBatchResponseProp: Prop = Prop.forAll(Gen.listOf(base64)){ (plaintexts: List[Base64]) =>
+  val decodeDecryptBatchResponseProp: Prop = Prop.forAll(nelGen(base64)){ (plaintexts: NonEmptyList[Base64]) =>
     val json = Json.obj( "batch_response" -> Json.fromValues(
-      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson)
+      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson).toList
     ))
     val expected = DecryptBatchResponse(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
     DecryptBatchResponse.decodeDecryptBatchResponse.decodeJson(json) === Right(expected)
