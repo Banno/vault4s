@@ -1,6 +1,6 @@
-val http4sV = "0.20.11"
+val http4sV = "0.20.15"
 
-val specs2V = "4.7.1"
+val specs2V = "4.8.1"
 
 val kindProjectorV = "0.10.3"
 val betterMonadicForV = "0.3.1"
