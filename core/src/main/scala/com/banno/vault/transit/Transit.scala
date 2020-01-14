@@ -94,9 +94,10 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   /* The URIs we use here are those from the transit documentation.
    * the v1 prefix is specified in https://www.vaultproject.io/api/overview
    */
-  private val encryptUri: Uri =  vaultUri / "v1" / "transit" / "encrypt" / key.name
-  private val decryptUri: Uri =  vaultUri / "v1" / "transit" / "decrypt" / key.name
-  private val readKeyUri: Uri =  vaultUri / "v1" / "transit" / "keys"    / key.name
+
+  private val encryptUri: Uri = vaultUri.withPath(s"/v1/transit/encrypt/${key.name}")
+  private val decryptUri: Uri = vaultUri.withPath(s"/v1/transit/decrypt/${key.name}")
+  private val readKeyUri: Uri = vaultUri.withPath(s"/v1/transit/keys/${key.name}")
 
   private val tokenHeaders: Headers = Headers.of(Header("X-Vault-Token", token))
 
