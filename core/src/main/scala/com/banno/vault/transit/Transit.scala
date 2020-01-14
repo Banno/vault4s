@@ -16,7 +16,7 @@
 
 package com.banno.vault.transit
 
-import cats.syntax.all._
+import cats.implicits._
 import cats.effect.Sync
 import org.http4s._
 import org.http4s.Method.{GET, POST}
@@ -95,9 +95,11 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
    * the v1 prefix is specified in https://www.vaultproject.io/api/overview
    */
 
-  private val encryptUri: Uri = vaultUri.withPath(s"/v1/transit/encrypt/${key.name}")
-  private val decryptUri: Uri = vaultUri.withPath(s"/v1/transit/decrypt/${key.name}")
-  private val readKeyUri: Uri = vaultUri.withPath(s"/v1/transit/keys/${key.name}")
+  private val keyAsPath: String = key.name.dropWhile(_ === '/')
+
+  private val encryptUri: Uri = vaultUri.withPath(s"/v1/transit/encrypt/${keyAsPath}")
+  private val decryptUri: Uri = vaultUri.withPath(s"/v1/transit/decrypt/${keyAsPath}")
+  private val readKeyUri: Uri = vaultUri.withPath(s"/v1/transit/keys/${keyAsPath}")
 
   private val tokenHeaders: Headers = Headers.of(Header("X-Vault-Token", token))
 
