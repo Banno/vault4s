@@ -16,7 +16,7 @@
 
 package com.banno.vault.transit
 
-import cats.syntax.all._
+import cats.implicits._
 import cats.data.NonEmptyList
 import cats.effect.Sync
 import org.http4s._
