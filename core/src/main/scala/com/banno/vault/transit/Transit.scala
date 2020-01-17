@@ -267,7 +267,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   private def decryptBatchAux(payload: DecryptBatchRequest, op: String): F[NonEmptyList[TransitError.Or[PlainText]]] = {
     val request = postOf(decryptUri, payload)
     for {
-      results <- F.handleErrorWith(client.expect[DecryptBatchResponse](request).map(_.batchResults)){
+      results <- F.handleErrorWith(client.expect[DecryptBatchResponse](request).map(_.data.batchResults)){
         case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=$op".some))
       }
       _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {

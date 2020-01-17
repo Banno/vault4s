@@ -235,12 +235,23 @@ private[transit] object DecryptBatchRequest {
     Decoder.forProduct1("batch_input")((bi: NonEmptyList[DecryptRequest]) => DecryptBatchRequest(bi))
   
 }
-private[transit] final case class DecryptBatchResponse(batchResults: NonEmptyList[TransitError.Or[DecryptResult]])
+private[transit] final case class DecryptBatchResponse(data: DecryptBatchResults)
 private[transit] object DecryptBatchResponse {
   implicit val eqDecryptBatchResponse: Eq[DecryptBatchResponse] =
-    Eq.by[DecryptBatchResponse, NonEmptyList[TransitError.Or[DecryptResult]]](_.batchResults)
+    Eq.by[DecryptBatchResponse, DecryptBatchResults](_.data)
+
   implicit val encodeDecryptBatchResponse: Encoder[DecryptBatchResponse] =
-    Encoder.forProduct1("batch_results")(_.batchResults)
+    Encoder.forProduct1("data")(_.data)
   implicit val decodeDecryptBatchResponse: Decoder[DecryptBatchResponse] =
-    Decoder.forProduct1("batch_results")((br: NonEmptyList[TransitError.Or[DecryptResult]]) => DecryptBatchResponse(br))
+    Decoder.forProduct1("data")(apply)
+}
+
+private[transit] final case class DecryptBatchResults(batchResults: NonEmptyList[TransitError.Or[DecryptResult]])
+private[transit] object DecryptBatchResults {
+  implicit val eqDecryptBatchResults: Eq[DecryptBatchResults] =
+    Eq.by[DecryptBatchResults, NonEmptyList[TransitError.Or[DecryptResult]]](_.batchResults)
+  implicit val encodeDecryptBatchResults: Encoder[DecryptBatchResults] =
+    Encoder.forProduct1("batch_results")(_.batchResults)
+  implicit val decodeDecryptBatchResults: Decoder[DecryptBatchResults] =
+    Decoder.forProduct1("batch_results")(apply)
 }
