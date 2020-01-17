@@ -111,8 +111,8 @@ object TransitModelsSpec extends Spec with ScalaCheck {
     val json = Json.obj( "batch_response" -> Json.fromValues(
       plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson).toList
     ))
-    val expected = DecryptBatchResponse(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
-    DecryptBatchResponse.decodeDecryptBatchResponse.decodeJson(json) === Right(expected)
+    val expected = DecryptBatchResults(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
+    DecryptBatchResults.decodeDecryptBatchResults.decodeJson(json) === Right(expected)
   }
 
 }
