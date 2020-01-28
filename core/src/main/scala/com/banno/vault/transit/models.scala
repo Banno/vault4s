@@ -17,8 +17,8 @@
 package com.banno.vault.transit
 
 import cats.Eq
-import cats.kernel.instances.option._
-import cats.kernel.instances.string._
+import cats.data.NonEmptyList
+import cats.kernel.instances.all._
 import cats.syntax.eq._
 import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
@@ -145,6 +145,26 @@ private[transit] object EncryptResponse {
     Decoder.forProduct1("data")((d: EncryptResult) => EncryptResponse(d))
 }
 
+private[transit] final case class EncryptBatchRequest(batchInput: NonEmptyList[EncryptRequest])
+private[transit] object EncryptBatchRequest {
+  implicit val eqEncryptBatchRequest: Eq[EncryptBatchRequest] =
+    Eq.by[EncryptBatchRequest, NonEmptyList[EncryptRequest]](_.batchInput)
+  implicit val encodeEncryptBatchRequest: Encoder[EncryptBatchRequest] =
+    Encoder.forProduct1("batch_input")(_.batchInput)
+  implicit val decodeEncryptBatchRequest: Decoder[EncryptBatchRequest] =
+    Decoder.forProduct1("batch_input")((bi: NonEmptyList[EncryptRequest]) => EncryptBatchRequest(bi))
+}
+
+private[transit] final case class EncryptBatchResponse(batchResults: NonEmptyList[TransitError.Or[EncryptResult]])
+private[transit] object EncryptBatchResponse {
+  implicit val eqEncryptBatchResponse: Eq[EncryptBatchResponse] =
+    Eq.by(_.batchResults)
+  implicit val encodeEncryptBatchResponse: Encoder[EncryptBatchResponse] =
+    Encoder.forProduct1("batch_results")(_.batchResults)
+  implicit val decodeEncryptBatchResponse: Decoder[EncryptBatchResponse] =
+    Decoder.forProduct1("batch_results")((br: NonEmptyList[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(br))
+}
+
 private[transit] final case class DecryptRequest(ciphertext: CipherText, context: Option[Context])
 private[transit] object DecryptRequest {
   implicit val eqDecryptRequest: Eq[DecryptRequest] =
@@ -182,9 +202,11 @@ private[transit] object DecryptResponse {
     Decoder.forProduct1("data")((d: DecryptResult) => DecryptResponse(d))
 }
 
-private[transit] final case class TransitError(error: String)
+final case class TransitError(error: String)
 private[transit] object TransitError {
   type Or[A] = Either[TransitError, A]
+
+  implicit val eqError: Eq[TransitError] = Eq.by(_.error)
 
   implicit val encodeError: Encoder[TransitError] =
     Encoder.forProduct1("error")(_.error)
@@ -201,4 +223,35 @@ private[transit] object TransitError {
   implicit def decodeOr[A](implicit decodeA: Decoder[A]): Decoder[Or[A]] =
     decodeError either decodeA
 
+}
+
+private[transit] final case class DecryptBatchRequest(batchInput: NonEmptyList[DecryptRequest])
+private[transit] object DecryptBatchRequest {
+  implicit val eqDecryptBatchRequest: Eq[DecryptBatchRequest] =
+    Eq.by[DecryptBatchRequest, NonEmptyList[DecryptRequest]](_.batchInput)
+  implicit val encodeDecryptBatchRequest: Encoder[DecryptBatchRequest] =
+    Encoder.forProduct1("batch_input")(_.batchInput)
+  implicit val decodeDecryptBatchRequest: Decoder[DecryptBatchRequest] =
+    Decoder.forProduct1("batch_input")((bi: NonEmptyList[DecryptRequest]) => DecryptBatchRequest(bi))
+  
+}
+private[transit] final case class DecryptBatchResponse(data: DecryptBatchResults)
+private[transit] object DecryptBatchResponse {
+  implicit val eqDecryptBatchResponse: Eq[DecryptBatchResponse] =
+    Eq.by[DecryptBatchResponse, DecryptBatchResults](_.data)
+
+  implicit val encodeDecryptBatchResponse: Encoder[DecryptBatchResponse] =
+    Encoder.forProduct1("data")(_.data)
+  implicit val decodeDecryptBatchResponse: Decoder[DecryptBatchResponse] =
+    Decoder.forProduct1("data")(apply)
+}
+
+private[transit] final case class DecryptBatchResults(batchResults: NonEmptyList[TransitError.Or[DecryptResult]])
+private[transit] object DecryptBatchResults {
+  implicit val eqDecryptBatchResults: Eq[DecryptBatchResults] =
+    Eq.by[DecryptBatchResults, NonEmptyList[TransitError.Or[DecryptResult]]](_.batchResults)
+  implicit val encodeDecryptBatchResults: Encoder[DecryptBatchResults] =
+    Encoder.forProduct1("batch_results")(_.batchResults)
+  implicit val decodeDecryptBatchResults: Decoder[DecryptBatchResults] =
+    Decoder.forProduct1("batch_results")(apply)
 }
