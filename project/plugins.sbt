@@ -8,4 +8,4 @@ addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.3.1")
 
 addSbtPlugin("io.chrisdavenport" % "sbt-mima-version-check" % "0.1.2")
 
-addSbtPlugin("com.geirsson" % "sbt-ci-release" % "1.4.31")
+addSbtPlugin("com.geirsson" % "sbt-ci-release" % "1.5.0")
