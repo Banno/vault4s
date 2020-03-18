@@ -202,6 +202,7 @@ object Vault {
     *  It then also provides a Stream that continuously renews the token when it is about to finish.
     *  - keeps the token constantly renewed
     *  - Upon termination of the Stream (from the using application) revokes the token.
+    *    However, any error on revoking the token is ignored.
     */
   def keepLoginRenewed[F[_]: Concurrent](client: Client[F], vaultUri: Uri)
                                 (token: VaultToken, tokenLeaseExtension: FiniteDuration)
@@ -222,7 +223,9 @@ object Vault {
         .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
         Stream.raiseError[F](NonRenewableToken(token.clientToken))
 
-    Stream.bracket(token.pure[F])(revokeSelfToken(client, vaultUri)).flatMap { token =>
+    def cleanup(token: VaultToken): F[Unit] = revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
+
+    Stream.bracket(token.pure[F])(cleanup).flatMap { token =>
       Stream.emit(token.clientToken).concurrently(keep(token))
     }
   }
@@ -232,6 +235,12 @@ object Vault {
                                 (implicit T: Timer[F]): Stream[F, String] = 
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
 
+
+  /**
+    * This function uses the given Vault client, uri, and authenticated token to obtain a secret from Vault.
+    *  It then also provides a Stream that continuously renews the lease on that secret, when it is about to finish.
+    *  Upon termination of the Stream (from the using application) revokes the token (but any error on revokation is ignored).
+    */
   def readSecretAndRetain[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri, clientToken: String)
                                                    (secretPath: String, leaseExtension: FiniteDuration)
                                                    (implicit T: Timer[F]): Stream[F, A] = {
@@ -254,7 +263,7 @@ object Vault {
     val read = Vault.readSecret[F, A](client, vaultUri)(clientToken, secretPath)
 
     def cleanup(secret: VaultSecret[A]): F[Unit] =
-      Vault.revokeLease[F](client, vaultUri)(clientToken, secret.renewal.leaseId)
+      Vault.revokeLease[F](client, vaultUri)(clientToken, secret.renewal.leaseId).handleError(_ => ())
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
       Stream.emit(secret.data).concurrently(keep(secret))
