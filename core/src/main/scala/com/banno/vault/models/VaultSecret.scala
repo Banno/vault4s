@@ -39,9 +39,7 @@ object VaultSecret {
 
   implicit def VaultSecretEq[A : Eq] : Eq[VaultSecret[A]] = Eq.instance[VaultSecret[A]]((vt1, vt2) =>
     vt1.data === vt2.data &&
-      vt1.renewal.leaseDuration === vt2.renewal.leaseDuration &&
-      vt1.renewal.leaseId === vt2.renewal.leaseId &&
-      vt1.renewal.renewable === vt2.renewal.renewable
+      vt1.renewal === vt2.renewal
   )
   
 }
