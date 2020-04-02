@@ -253,12 +253,14 @@ object Vault {
     }
 
     def keep(secret: VaultSecret[A]): Stream[F, Unit] =
-      Stream
-        .iterateEval(secret.renewal)(renewOnDuration)
-        .takeThrough(_.renewable)
-        .last
-        .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
-        Stream.raiseError[F](NonRenewableSecret(secret.renewal.leaseId))
+      secret.renewal.fold(Stream.empty)(initRenewal => 
+        Stream
+          .iterateEval(initRenewal)(renewOnDuration)
+          .takeThrough(_.renewable)
+          .last
+          .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
+          Stream.raiseError[F](NonRenewableSecret(initRenewal.leaseId))
+      )
 
     val read = Vault.readSecret[F, A](client, vaultUri)(clientToken, secretPath)
 

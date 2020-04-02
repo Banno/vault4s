@@ -20,20 +20,20 @@ import cats.Eq
 import cats.implicits._
 import io.circe.Decoder
 
-final case class VaultSecret[A](data: A, renewal: VaultSecretRenewal)
+final case class VaultSecret[A](data: A, renewal: Option[VaultSecretRenewal])
 
 object VaultSecret {
 
-  def apply[A](data: A, leaseDuration: Long, leaseId: String, renewable: Boolean): VaultSecret[A] =
-    VaultSecret[A](data, VaultSecretRenewal(leaseDuration, leaseId, renewable))
+  def apply[A](data: A, leaseDuration: Option[Long], leaseId: Option[String], renewable: Option[Boolean]): VaultSecret[A] =
+    VaultSecret[A](data, (leaseDuration, leaseId, renewable).mapN(VaultSecretRenewal.apply))
 
   implicit def VaultSecretDecoder[A : Decoder]: Decoder[VaultSecret[A]] =
     Decoder.instance[VaultSecret[A]] { c =>
       Decoder.resultInstance.map4(
         c.downField("data").as[A],
-        c.downField("lease_duration").as[Long],
-        c.downField("lease_id").as[String],
-        c.downField("renewable").as[Boolean]
+        c.downField("lease_duration").as[Option[Long]],
+        c.downField("lease_id").as[Option[String]],
+        c.downField("renewable").as[Option[Boolean]]
       )(VaultSecret[A])
     }
 
