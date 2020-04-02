@@ -377,12 +377,12 @@ object VaultSpec extends Spec with ScalaCheck {
 
   val readSecretPostgresPasswordTokenProp : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
     Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPostgresPassPath)
-      .unsafeRunSync() == VaultSecret(VaultValue(postgresPass), leaseDuration, leaseId, renewable)
+      .unsafeRunSync() == VaultSecret(VaultValue(postgresPass), leaseDuration.some, leaseId.some, renewable.some)
   }
 
   val readSecretPrivateKeyProp : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
     Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
-      .unsafeRunSync() == VaultSecret(VaultValue(privateKey), leaseDuration, leaseId, renewable)
+      .unsafeRunSync() == VaultSecret(VaultValue(privateKey), leaseDuration.some, leaseId.some, renewable.some)
   }
 
   val readSecretPostgresBadTokenProp : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
@@ -418,7 +418,7 @@ object VaultSpec extends Spec with ScalaCheck {
 
   val generateCertificatesProp: Prop = Prop.forAll(VaultArbitraries.validVaultUri, VaultArbitraries.certRequestGen) { (uri, certRequest) =>
     Vault.generateCertificate(mockClient, uri)(clientToken, generateCertsPath, certRequest)
-      .unsafeRunSync === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration, leaseId, renewable)
+      .unsafeRunSync === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration.some, leaseId.some, renewable.some)
   }
 
   val loginAndKeepSecretLeasedFails = Prop.forAll(

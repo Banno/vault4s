@@ -17,7 +17,7 @@
 package com.banno.vault
 
 import fs2.Stream
-import cats.Alternative
+import cats._
 import cats.effect._
 import cats.implicits._
 import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken}
@@ -253,17 +253,24 @@ object Vault {
     }
 
     def keep(secret: VaultSecret[A]): Stream[F, Unit] =
-      Stream
-        .iterateEval(secret.renewal)(renewOnDuration)
-        .takeThrough(_.renewable)
-        .last
-        .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
-        Stream.raiseError[F](NonRenewableSecret(secret.renewal.leaseId))
+      secret.renewal.fold[Stream[F, Unit]](Stream.empty)(initRenewal => 
+        Stream
+          .iterateEval(initRenewal)(renewOnDuration)
+          .takeThrough(_.renewable)
+          .last
+          .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
+          Stream.raiseError[F](NonRenewableSecret(initRenewal.leaseId))
+      )
 
     val read = Vault.readSecret[F, A](client, vaultUri)(clientToken, secretPath)
 
     def cleanup(secret: VaultSecret[A]): F[Unit] =
-      Vault.revokeLease[F](client, vaultUri)(clientToken, secret.renewal.leaseId).handleError(_ => ())
+      secret.renewal.fold[F[Unit]](
+        Applicative[F].unit
+      ){renewal => 
+        Vault.revokeLease[F](client, vaultUri)(clientToken, renewal.leaseId).handleError(_ => ())
+      }
+      
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
       Stream.emit(secret.data).concurrently(keep(secret))
