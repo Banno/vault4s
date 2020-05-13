@@ -1,13 +1,13 @@
 val http4sV = "0.21.4"
 
-val specs2V = "4.8.1"
+val specs2V = "4.9.4"
 
 val kindProjectorV = "0.11.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
   .settings(publish / skip := true)
-  .disablePlugins(MimaPlugin)  
+  .disablePlugins(MimaPlugin)
   .aggregate(core)
 
 lazy val core = project.in(file("core"))
@@ -64,7 +64,6 @@ lazy val docs = project.in(file("docs"))
         "gray-lighter" -> "#F4F3F4",
         "white-color" -> "#FFFFFF"
       ),
-      fork in tut := true,
       scalacOptions in Tut --= Seq(
         "-Xfatal-warnings",
         "-Ywarn-unused-import",
@@ -73,7 +72,6 @@ lazy val docs = project.in(file("docs"))
         "-Ywarn-unused:imports",
         "-Xlint:-missing-interpolator,_"
       ),
-      libraryDependencies += "com.47deg" %% "github4s" % "0.20.1",
       micrositePushSiteWith := GitHub4s,
       micrositeGithubToken := sys.env.get("GITHUB_TOKEN"),
       micrositeExtraMdFiles := Map(
@@ -86,8 +84,8 @@ lazy val docs = project.in(file("docs"))
 
 // General Settings
 lazy val commonSettings = Seq(
-  scalaVersion := "2.13.1",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.10"),
+  scalaVersion := "2.13.2",
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.11"),
 
   addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
