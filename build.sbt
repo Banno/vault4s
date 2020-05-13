@@ -1,13 +1,13 @@
 val http4sV = "0.21.4"
 
-val specs2V = "4.8.1"
+val specs2V = "4.9.4"
 
 val kindProjectorV = "0.11.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
   .settings(publish / skip := true)
-  .disablePlugins(MimaPlugin)  
+  .disablePlugins(MimaPlugin)
   .aggregate(core)
 
 lazy val core = project.in(file("core"))
