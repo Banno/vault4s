@@ -20,7 +20,7 @@ import fs2.Stream
 import cats._
 import cats.effect._
 import cats.implicits._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models._
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
@@ -274,6 +274,72 @@ object Vault {
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
       Stream.emit(secret.data).concurrently(keep(secret))
+    }
+  }
+
+  /**
+   *  https://www.vaultproject.io/api/secret/transit#encrypt-data
+   */
+  def encryptData[F[_]](
+      client: Client[F],
+      vaultUri: Uri
+  )(
+      token: String,
+      name: String,
+      plainText: String,
+      context: Option[String],
+      keyVersion: Option[Int],
+      nonce: Option[String],
+      encryptionType: VaultEncryptionType,
+      convergentEncryption: Option[String])(implicit F: Sync[F]): F[VaultEncryptionData[VaultCipherText]] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "transit" / "encrypt" / name,
+      headers = Headers.of(Header("X-Vault-Token", token))
+    ).withEntity[Json](
+      Json.obj(
+        "plaintext" := plainText,
+        "context" := context,
+        "key_version" := keyVersion,
+        "nonce" := nonce,
+        "type" := encryptionType,
+        "convergent_encryption" := convergentEncryption
+      )
+    )
+    val resp = client.expect[VaultEncryptionData[VaultCipherText]](request)(jsonOf[F, VaultEncryptionData[VaultCipherText]])
+    F.handleErrorWith(resp) { e =>
+      F.raiseError[VaultEncryptionData[VaultCipherText]](
+        VaultRequestError(request, e.some, s"tokenLength=${token.length.toString}".some)
+      )
+    }
+  }
+
+  /**
+   *  https://www.vaultproject.io/api/secret/transit#decrypt-data
+   */
+  def decryptData[F[_]](
+      client: Client[F],
+      vaultUri: Uri
+    )(
+      token: String,
+      name: String,
+      cipherText: String,
+      context: Option[String],
+      nonce: Option[String])(implicit F: Sync[F]): F[VaultEncryptionData[VaultPlainText]] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "transit" / "decrypt" / name,
+      headers = Headers.of(Header("X-Vault-Token", token))
+    ).withEntity(
+      Json.obj(
+        "ciphertext" := cipherText,
+        "context" := context,
+        "nonce" := nonce,
+      )
+    )
+    val resp = client.expect[VaultEncryptionData[VaultPlainText]](request)(jsonOf[F, VaultEncryptionData[VaultPlainText]])
+    F.handleErrorWith(resp) { e =>
+      F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${token.length.toString}".some))
     }
   }
 

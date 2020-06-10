@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 
 import cats.effect.{IO, Sync}
 import cats.implicits._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models.{CertificateData, CertificateRequest, VaultCipherText, VaultEncryptionData, VaultEncryptionType, VaultPlainText, VaultSecret, VaultSecretRenewal, VaultToken}
 import io.circe.Decoder
 import org.http4s._
 import org.http4s.implicits._
@@ -65,6 +65,8 @@ object VaultSpec extends Spec with ScalaCheck {
         |revokeLease works as expected when sending valid input arguments $revokeLeaseValidAddressProp
         |generateCertificate works as expected when sending a valid token $generateCertificatesProp
         |loginAndKeepSecretLeased fails when wait duration is longer than lease duration $loginAndKeepSecretLeasedFails
+        |encrypt works as expected when requesting an encryption with a valid token $encryptValidTokenProp
+        |decrypt works as expected when requesting an encryption with a valid token $decryptValidTokenProp
     """.stripMargin
 
   case class RoleId(role_id: String)
@@ -112,6 +114,29 @@ object VaultSpec extends Spec with ScalaCheck {
   implicit val certificateRequestDecoder: Decoder[CertificateRequest] =
     Decoder.forProduct7("common_name", "alt_names", "ip_sans", "ttl", "format", "private_key_format", "exclude_cn_from_sans")(CertificateRequest.apply)
 
+  implicit val vaultEncryptionType: Decoder[VaultEncryptionType] = Decoder.decodeString.map {
+    case VaultEncryptionType.`aes128-gcm96`.name => VaultEncryptionType.`aes128-gcm96`
+    case VaultEncryptionType.`aes256-gcm96`.name => VaultEncryptionType.`aes256-gcm96`
+    case VaultEncryptionType.`chacha20-poly1305`.name => VaultEncryptionType.`chacha20-poly1305`
+    case VaultEncryptionType.`ed25519`.name => VaultEncryptionType.`ed25519`
+    case VaultEncryptionType.`ecdsa-p256`.name => VaultEncryptionType.`ecdsa-p256`
+    case VaultEncryptionType.`ecdsa-p384`.name => VaultEncryptionType.`ecdsa-p384`
+    case VaultEncryptionType.`ecdsa-p521`.name => VaultEncryptionType.`ecdsa-p521`
+    case VaultEncryptionType.`rsa-2048`.name => VaultEncryptionType.`rsa-2048`
+    case VaultEncryptionType.`rsa-3072`.name => VaultEncryptionType.`rsa-3072`
+    case VaultEncryptionType.`rsa-4096`.name => VaultEncryptionType.`rsa-4096`
+  }
+
+  case class EncryptData(plaintext: String, context: Option[String], keyVersion: Option[Int], nonce: Option[String], encType: VaultEncryptionType, convergentEncryption: Option[String])
+  object EncryptData {
+    implicit val encryptDataDecoder = Decoder.forProduct6("plaintext", "context", "key_version", "nonce", "type", "convergent_encryption")(EncryptData.apply)
+  }
+
+  case class DecryptData(plaintext: String, context: Option[String], nonce: Option[String])
+  object DecryptData {
+    implicit val decryptDataDecoder = Decoder.forProduct3("ciphertext", "context", "nonce")(DecryptData.apply)
+  }
+
   val certificate: String      = UUID.randomUUID().toString
   val issuing_ca: String       = UUID.randomUUID().toString
   val ca_chain: String         = UUID.randomUUID().toString
@@ -136,6 +161,9 @@ object VaultSpec extends Spec with ScalaCheck {
   val postgresPass: String = UUID.randomUUID().toString
   val privateKey: String   = UUID.randomUUID().toString
 
+  val keyName: String = "secretkey"
+  val plainText: String  = "dGhlIHF1aWNrIGJyb3duIGZveAo="
+  val cipherText: String = "vault:v1:XjsPWPjqPrBi1N2Ms2s1QM798YyFWnO4TR4lsFA="
 
   val secretPostgresPassPath: String = "secret/postgres1/password"
   val secretPrivateKeyPath: String   = "secret/data-services/private-key"
@@ -300,6 +328,21 @@ object VaultSpec extends Spec with ScalaCheck {
           }
         }
 
+      case req @ POST -> Root / "v1" / "transit" / "encrypt" / _ =>
+        checkVaultToken(req) {
+          req.decodeJson[EncryptData].flatMap {
+            case EncryptData(pt, _, _, _, _, _) =>
+              if (pt == plainText) Ok(s"""{"data":{"ciphertext":"$cipherText"}}""") else BadRequest()
+          }
+        }
+      case req @ POST -> Root / "v1" / "transit" / "decrypt" / _ =>
+        checkVaultToken(req) {
+          req.decodeJson[DecryptData].flatMap {
+            case DecryptData(ct, _, _) =>
+              if (ct == cipherText) Ok(s"""{"data":{"plaintext":"$plainText"}}""") else BadRequest()
+          }
+        }
+
       case GET -> path =>
         BadRequest(s"Path not mapped: $path")
     }
@@ -436,5 +479,28 @@ object VaultSpec extends Spec with ScalaCheck {
     .last
     .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
   }}
+
+  val encryptValidTokenProp: Prop = Prop.forAll(
+      VaultArbitraries.validVaultUri,
+      VaultArbitraries.contextGen,
+      Arbitrary.arbitrary[Option[Int]],
+      Arbitrary.arbitrary[Option[String]],
+      VaultArbitraries.encryptionTypeGen,
+      Arbitrary.arbitrary[Option[String]]
+  ) { (uri, context, keyVersion, nonce, encryptionType, convergentEnc) =>
+    Vault
+      .encryptData(mockClient, uri)(clientToken, keyName, plainText, context, keyVersion, nonce, encryptionType, convergentEnc)
+      .unsafeRunSync() == VaultEncryptionData(VaultCipherText(cipherText))
+  }
+
+  val decryptValidTokenProp: Prop = Prop.forAll(
+      VaultArbitraries.validVaultUri,
+      VaultArbitraries.contextGen,
+      Arbitrary.arbitrary[Option[String]]
+    ) { (uri, context, nonce) =>
+    Vault
+      .decryptData(mockClient, uri)(clientToken, keyName, cipherText, context, nonce)
+      .unsafeRunSync() == VaultEncryptionData(VaultPlainText(plainText))
+  }
 
 }
