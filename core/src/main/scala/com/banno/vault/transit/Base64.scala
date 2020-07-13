@@ -31,6 +31,8 @@ final class Base64 private[Base64] (val value: String) extends AnyVal {
 
 object Base64 {
 
+  val empty: Base64 = new Base64("")
+
   implicit val eqBase64: Eq[Base64] = Eq.by[Base64, String](_.value)
 
   implicit final val decodeBase64: Decoder[Base64] =

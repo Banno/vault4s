@@ -20,7 +20,7 @@ import cats.Eq
 import cats.data.NonEmptyList
 import cats.kernel.instances.all._
 import cats.syntax.eq._
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.{Decoder, Encoder, Json, HCursor}
 import java.time.Instant
 
 final case class KeyName(name: String)
@@ -187,8 +187,15 @@ private[transit] object DecryptResult {
   implicit val encodeDecryptResult: Encoder[DecryptResult] =
     Encoder.forProduct1("plaintext")(_.plaintext)
 
+  /* We need custom decoder because sometimes, field `plaintext` may be empty in the response.
+   * See https://github.com/hashicorp/vault/issues/6140  */
   implicit val decodeDecryptResult: Decoder[DecryptResult] =
-    Decoder.forProduct1("plaintext")((pt: PlainText)  => DecryptResult(pt))
+    new Decoder[DecryptResult] {
+      def apply(c: HCursor) =
+        c.downField("plaintext").as[Option[PlainText]].map { optPt =>
+          DecryptResult(optPt.getOrElse(PlainText(Base64.empty)))
+        }
+    }
 }
 
 private[transit] final case class DecryptResponse(data: DecryptResult)
