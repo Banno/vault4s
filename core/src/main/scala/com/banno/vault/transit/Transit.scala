@@ -22,7 +22,7 @@ import cats.effect.Sync
 import org.http4s._
 import org.http4s.Method.{GET, POST}
 import org.http4s.client.Client
-import com.banno.vault.models.VaultRequestError
+import com.banno.vault.models.{VaultRequestError, VaultSecret}
 import io.circe.Encoder
 import org.http4s.circe._
 
@@ -129,7 +129,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   private implicit val encryptResponseEntityDecoder: EntityDecoder[F, EncryptResponse] = jsonOf
   private implicit val decryptResponseEntityDecoder: EntityDecoder[F, DecryptResponse] = jsonOf
   private implicit val keyEntityDecoder: EntityDecoder[F, KeyDetails] = jsonOf
-  private implicit val ebred: EntityDecoder[F, EncryptBatchResponse] = jsonOf
+  private implicit val ebred: EntityDecoder[F, VaultSecret[EncryptBatchResponse]] = jsonOf
   private implicit val dbred: EntityDecoder[F, DecryptBatchResponse] = jsonOf[F, DecryptBatchResponse]
 
   /* The URIs we use here are those from the transit documentation.
@@ -207,7 +207,7 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
   private def encryptBatchAux(payload: EncryptBatchRequest, op: String): F[NonEmptyList[TransitError.Or[CipherText]]] = {
     val request = postOf(encryptUri, payload)
     for {
-      results <- F.handleErrorWith(client.expect[EncryptBatchResponse](request).map(_.batchResults)) {
+      results <- F.handleErrorWith(client.expect[VaultSecret[EncryptBatchResponse]](request).map(_.data.batchResults)) {
         case e => F.raiseError(VaultRequestError(request, e.some, s"keyName=${key.name}, operation=$op".some))
       }
       _ <- if (results.exists(_.isRight)) F.unit else F.raiseError {
