@@ -100,7 +100,7 @@ final class MockTransitService[F[_]: Sync]
           case Some(bc) => encryptResult(bc.ciphertext)
         }
       }
-      Ok(Json.obj("batch_results" -> Json.fromValues(results.toList)))
+      Ok(Json.obj("data" -> Json.obj("batch_results" -> Json.fromValues(results.toList))))
     }
 }
 
