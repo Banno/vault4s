@@ -13,8 +13,8 @@ stages:
   - name: release
     if: ((branch = master AND type = push) OR (tag IS present)) AND NOT fork
 
-scala_version_213: &scala_version_213 "2.13.2"
-scala_version_212: &scala_version_212 "2.12.11"
+scala_version_213: &scala_version_213 "2.13.3"
+scala_version_212: &scala_version_212 "2.12.12"
 
 jobs:
   include:

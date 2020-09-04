@@ -131,7 +131,7 @@ object VaultSpec extends Spec with ScalaCheck {
   val leaseDuration: Long       = Random.nextLong()
   val leaseId: String           = UUID.randomUUID().toString
   val renewable: Boolean        = Random.nextBoolean()
-  val increment: FiniteDuration = FiniteDuration(Random.nextInt.abs.toLong, TimeUnit.SECONDS)
+  val increment: FiniteDuration = FiniteDuration(Random.nextInt().abs.toLong, TimeUnit.SECONDS)
 
   val postgresPass: String = UUID.randomUUID().toString
   val privateKey: String   = UUID.randomUUID().toString
@@ -401,11 +401,11 @@ object VaultSpec extends Spec with ScalaCheck {
 
   val renewAValidToken : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
     Vault.renewSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true), 1.hour)
-      .unsafeRunSync === VaultToken(clientToken, 3600, renewable)
+      .unsafeRunSync() === VaultToken(clientToken, 3600, renewable)
   }
 
   val revokeAValidToken: Prop = Prop.forAll(VaultArbitraries.validVaultUri){ uri =>
-    Vault.revokeSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true)).unsafeRunSync ===( () )
+    Vault.revokeSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true)).unsafeRunSync() ===( () )
   }
 
   val renewLeaseValidAddressProp : Prop = Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
@@ -418,18 +418,18 @@ object VaultSpec extends Spec with ScalaCheck {
 
   val generateCertificatesProp: Prop = Prop.forAll(VaultArbitraries.validVaultUri, VaultArbitraries.certRequestGen) { (uri, certRequest) =>
     Vault.generateCertificate(mockClient, uri)(clientToken, generateCertsPath, certRequest)
-      .unsafeRunSync === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration.some, leaseId.some, renewable.some)
+      .unsafeRunSync() === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration.some, leaseId.some, renewable.some)
   }
 
   val loginAndKeepSecretLeasedFails = Prop.forAll(
-      VaultArbitraries.validVaultUri, 
+      VaultArbitraries.validVaultUri,
       Arbitrary.arbitrary[FiniteDuration],
       Arbitrary.arbitrary[FiniteDuration]
     ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
     import scala.concurrent.ExecutionContext.global
     implicit val t = IO.timer(global)
     implicit val ct = IO.contextShift(global)
-    
+
     Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
     .attempt
     .compile
