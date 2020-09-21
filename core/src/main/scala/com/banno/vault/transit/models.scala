@@ -59,7 +59,7 @@ object KeyDetails {
       Decoder.instance[KeyDetails] { c =>
         Decoder.resultInstance.map5(
           c.downField("data").downField("name").as[String],
-          c.downField("data").downField("convergent_encryption").as[Boolean],
+          c.downField("data").downField("convergent_encryption").as[Option[Boolean]].map(_.getOrElse(false)),
           c.downField("data").downField("derived").as[Boolean],
           c.downField("data").downField("keys").as[Map[Int, Instant]],
           c.downField("data").downField("type").as[String]
