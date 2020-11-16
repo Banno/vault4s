@@ -78,7 +78,10 @@ object Vault {
       uri = vaultUri.withPath(s"/v1/$newSecretPath"),
       headers = Headers.of(Header("X-Vault-Token", token))
     )
-    F.handleErrorWith(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) { e =>
+    F.adaptError(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) {
+      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+        InvalidMessageBodyFailure("Could not decode secret key value", cause.some)
+    }.handleErrorWith { e =>
       F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
     }
   }
@@ -194,7 +197,7 @@ object Vault {
   }
 
   def loginAndKeepSecretLeased[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Timer[F]): Stream[F, A] = 
+                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Timer[F]): Stream[F, A] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
   /**
@@ -232,7 +235,7 @@ object Vault {
 
   def loginAndKeep[F[_]: Concurrent](client: Client[F], vaultUri: Uri)
                                 (roleId: String, tokenLeaseExtension: FiniteDuration)
-                                (implicit T: Timer[F]): Stream[F, String] = 
+                                (implicit T: Timer[F]): Stream[F, String] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
 
 
@@ -253,7 +256,7 @@ object Vault {
     }
 
     def keep(secret: VaultSecret[A]): Stream[F, Unit] =
-      secret.renewal.fold[Stream[F, Unit]](Stream.empty)(initRenewal => 
+      secret.renewal.fold[Stream[F, Unit]](Stream.empty)(initRenewal =>
         Stream
           .iterateEval(initRenewal)(renewOnDuration)
           .takeThrough(_.renewable)
@@ -267,10 +270,10 @@ object Vault {
     def cleanup(secret: VaultSecret[A]): F[Unit] =
       secret.renewal.fold[F[Unit]](
         Applicative[F].unit
-      ){renewal => 
+      ){renewal =>
         Vault.revokeLease[F](client, vaultUri)(clientToken, renewal.leaseId).handleError(_ => ())
       }
-      
+
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
       Stream.emit(secret.data).concurrently(keep(secret))
