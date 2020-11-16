@@ -405,8 +405,11 @@ object VaultSpec extends Spec with ScalaCheck {
       .attempt
       .unsafeRunSync()
       .fold(
-        error => !error.getMessage.contains(privateKey),
-        Function.const(false)
+        { error =>
+          if (error.getMessage.contains(privateKey)) Prop.falsified :| "Secret data in the error message"
+          else Prop.passed :| "Secret data redacted"
+        },
+        _ => Prop.falsified :| "Data should not be parseable"
       )
   }
 
