@@ -59,6 +59,7 @@ object VaultSpec extends Spec with ScalaCheck {
         |readSecret works as expected when requesting the private key with a valid token $readSecretPrivateKeyProp
         |readSecret works as expected when requesting the postgres password with an invalid token $readSecretPostgresBadTokenProp
         |readSecret works as expected when requesting the private key with an invalid token $readSecretPrivateKeyBadTokenProp
+        |readSecret suppresses echoing the data when JSON decoding fails $readSecretDecodingFailProp
         |renewToken works as expected when sending a valid token $renewAValidToken
         |revokeToken works as expected when revoking a valid token $revokeAValidToken
         |renewLease works as expected when sending valid input arguments $renewLeaseValidAddressProp
@@ -397,6 +398,19 @@ object VaultSpec extends Spec with ScalaCheck {
       .attempt
       .unsafeRunSync()
       .isLeft
+  }
+
+  val readSecretDecodingFailProp : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+    Vault.readSecret[IO, TokenValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
+      .attempt
+      .unsafeRunSync()
+      .fold(
+        { error =>
+          if (error.getMessage.contains(privateKey)) Prop.falsified :| "Secret data in the error message"
+          else Prop.passed :| "Secret data redacted"
+        },
+        _ => Prop.falsified :| "Data should not be parseable"
+      )
   }
 
   val renewAValidToken : Prop = Prop.forAll(VaultArbitraries.validVaultUri){uri =>
