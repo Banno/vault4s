@@ -2,7 +2,7 @@ val http4sV = "0.21.11"
 
 val specs2V = "4.10.5"
 
-val kindProjectorV = "0.11.1"
+val kindProjectorV = "0.11.3"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
