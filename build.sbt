@@ -166,7 +166,7 @@ lazy val contributors = Seq(
   "peterneyens"           -> "Peter Neyens",
   "calvinbrown085"        -> "Calvin Brown",
   "juanpedromoreno"       -> "Juan Pedro Moreno",
-  "zachamccoy"            -> "Zach McCoy"
+  "zmccoy"                -> "Zach McCoy"
 )
 
 inThisBuild(List(
