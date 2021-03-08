@@ -28,7 +28,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "mimaReportBinaryIssues")),
 
   WorkflowStep.Sbt(
-    List("site/makeMicrosite"),
+    List("docs/makeMicrosite"),
     cond = Some(Scala213Cond)))
 
 ThisBuild / githubWorkflowTargetTags ++= Seq("v*")
