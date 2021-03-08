@@ -34,7 +34,7 @@ import scala.concurrent.duration._
 import munit.ScalaCheckSuite
 import org.scalacheck._
 import scala.util.Random
-//import cats.instances.unit
+import org.scalacheck.Prop._
 
 class VaultSpec extends ScalaCheckSuite {
 
@@ -446,7 +446,7 @@ property("loginAndKeepSecretLeased fails when wait duration is longer than lease
       VaultArbitraries.validVaultUri,
       Arbitrary.arbitrary[FiniteDuration],
       Arbitrary.arbitrary[FiniteDuration]
-    ) { case (uri, leaseDuration, waitInterval) => (leaseDuration < waitInterval).asInstanceOf[Unit] ==> { //Oh no.  Implicit ambig issues with predef
+    ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
     import scala.concurrent.ExecutionContext.global
     implicit val t = IO.timer(global)
     implicit val ct = IO.contextShift(global)
