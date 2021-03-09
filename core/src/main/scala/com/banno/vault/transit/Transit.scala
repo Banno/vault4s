@@ -18,7 +18,6 @@ package com.banno.vault.transit
 
 import cats.implicits._
 import cats.data.NonEmptyList
-import cats.effect.Sync
 import org.http4s._
 import org.http4s.Method.{GET, POST}
 import org.http4s.client.Client
@@ -26,6 +25,8 @@ import com.banno.vault.models.{VaultRequestError, VaultSecret}
 import io.circe.Encoder
 import org.http4s.circe._
 import cats.effect.Concurrent
+import org.typelevel.ci.CIString
+
 
 object Transit {
 
@@ -34,7 +35,7 @@ object Transit {
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#read-key
     */
-  def keyDetails[F[_]: Sync]
+  def keyDetails[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
       : F[KeyDetails] =
     new TransitClient[F](client, vaultUri, token, key).keyDetails
@@ -43,7 +44,7 @@ object Transit {
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
-  def encrypt[F[_]: Sync]
+  def encrypt[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (plaintext: PlainText)
       : F[CipherText] =
@@ -53,7 +54,7 @@ object Transit {
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
-  def encryptInContext[F[_]: Sync]
+  def encryptInContext[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (plaintext: PlainText, context: Context)
       : F[CipherText] =
@@ -64,7 +65,7 @@ object Transit {
     *  https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     *  https://www.vaultproject.io/api/secret/transit/index.html#batch_input
     */
-  def encryptBatch[F[_]: Sync]
+  def encryptBatch[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (plaintexts: NonEmptyList[PlainText])
       : F[NonEmptyList[TransitError.Or[CipherText]]] =
@@ -74,7 +75,7 @@ object Transit {
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
     */
-  def decrypt[F[_]: Sync]
+  def decrypt[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (cipherText: CipherText)
       : F[PlainText] =
@@ -84,7 +85,7 @@ object Transit {
     *
     *  https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
     */
-  def decryptInContext[F[_]: Sync]
+  def decryptInContext[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (cipherText: CipherText, context: Context)
       : F[PlainText] =
@@ -98,7 +99,7 @@ object Transit {
     *  that was located at the same position in the input. The result is either an error, if something went wrong
     *  with this particular CipherText, or the PlainText.
     */
-  def decryptBatch[F[_]: Sync]
+  def decryptBatch[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (cipherTexts: NonEmptyList[CipherText])
       : F[NonEmptyList[TransitError.Or[PlainText]]] =
@@ -112,7 +113,7 @@ object Transit {
       *  that was located at the same position in the input. The result is either an error, if something went wrong
       *  with this particular input pair of CipherText and Context, or with the PlainText.
       */
-  def decryptBatchInContext[F[_]: Sync]
+  def decryptBatchInContext[F[_]: Concurrent]
     (client: Client[F], vaultUri: Uri, token: String, key: KeyName)
     (inputs: NonEmptyList[(CipherText, Context)])
       : F[NonEmptyList[TransitError.Or[PlainText]]] =
@@ -138,11 +139,11 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
    */
   private val keyAsPath: String = key.name.dropWhile(_ === '/')
 
-  private val encryptUri: Uri = vaultUri.withPath(s"/v1/transit/encrypt/${keyAsPath}")
-  private val decryptUri: Uri = vaultUri.withPath(s"/v1/transit/decrypt/${keyAsPath}")
-  private val readKeyUri: Uri = vaultUri.withPath(s"/v1/transit/keys/${keyAsPath}")
+  private val encryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/encrypt/${keyAsPath}"))
+  private val decryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/decrypt/${keyAsPath}"))
+  private val readKeyUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/keys/${keyAsPath}"))
 
-  private val tokenHeaders: Headers = Headers.of(Header("X-Vault-Token", token))
+  private val tokenHeaders: Headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
 
   private def postOf[A](uri: Uri, data: A)(implicit enc: Encoder[A])  =
     Request[F](method = POST, uri = uri, headers = tokenHeaders).withEntity(enc(data))
