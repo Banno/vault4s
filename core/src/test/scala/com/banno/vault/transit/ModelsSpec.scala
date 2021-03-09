@@ -105,11 +105,10 @@ class TransitModelsSpec extends ScalaCheckSuite {
       )
     }
   }
-   //These last 2 were left OUT of the list to create tests for.  Check on reasoning.  (They are failing of course)
-  //This seems to be failing on (  override val scalaCheckInitialSeed = "husVyHTu7XORfSQ74rRpHOiiOrRC1Q_wZRKHxpz2YVC=")
+
   property("encode EncryptBatchResponse in") { 
     Prop.forAll(nelGen(cipherText)){ cts =>
-      val json = Json.obj("batch_response" -> Json.fromValues(
+      val json = Json.obj("batch_results" -> Json.fromValues(
         cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))).toList
       ))
       EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
@@ -118,7 +117,7 @@ class TransitModelsSpec extends ScalaCheckSuite {
 
   property("decode DecryptBatchResponse in") { 
     Prop.forAll(nelGen(base64)){ (plaintexts: NonEmptyList[Base64]) =>
-      val json = Json.obj( "batch_response" -> Json.fromValues(
+      val json = Json.obj( "batch_results" -> Json.fromValues(
         plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson).toList
       ))
       val expected = DecryptBatchResults(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
