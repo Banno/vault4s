@@ -19,13 +19,15 @@ package com.banno.vault
 import fs2.Stream
 import cats._
 import cats.effect._
-import cats.implicits._
+import cats.syntax.all._
 import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken}
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
-import org.http4s.client.{ Client, UnexpectedStatus }
+import org.http4s.client.Client
+import org.typelevel.ci.CIString
+
 
 import scala.concurrent.duration._
 
@@ -34,7 +36,7 @@ object Vault {
   /**
    * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
    */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String)(implicit F: Sync[F]): F[VaultToken] = {
+  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String)(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
           method = Method.POST,
           uri = vaultUri / "v1" / "auth" / "approle" / "login"
@@ -51,7 +53,7 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/auth/kubernetes/index.html#login
    */
-  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Sync[F]): F[VaultToken] = {
+  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
         method = Method.POST,
         uri = vaultUri / "v1" / "auth" / "kubernetes" / "login"
@@ -71,12 +73,12 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/secret/kv/index.html#read-secret
    */
-  def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Sync[F], D: Decoder[A]): F[VaultSecret[A]] = {
+  def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] = {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
       method = Method.GET,
       uri = vaultUri.withPath(s"/v1/$newSecretPath"),
-      headers = Headers.of(Header("X-Vault-Token", token))
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     F.adaptError(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) {
       case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
@@ -89,11 +91,11 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/system/leases.html#renew-lease
    */
-  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Sync[F]): F[VaultSecretRenewal] = {
+  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
     val request = Request[F](
         method = Method.PUT,
         uri = vaultUri.withPath("/v1/sys/leases/renew"),
-        headers = Headers.of(Header("X-Vault-Token", token))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
       ).withEntity(
         Json.obj(
           ("lease_id", Json.fromString(leaseId)),
@@ -110,11 +112,11 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
    */
-  def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken, newLeaseDuration: FiniteDuration)(implicit F: Sync[F]): F[VaultToken] = {
+  def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken, newLeaseDuration: FiniteDuration)(implicit F: Async[F]): F[VaultToken] = {
     val request = Request[F](
         method = Method.POST,
         uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-        headers = Headers.of(Header("X-Vault-Token", token.clientToken))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
       ).withEntity(
         Json.obj(
           ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
@@ -131,11 +133,11 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
    */
-  def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken)(implicit F: Sync[F]): F[Unit] = {
+  def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken)(implicit F: Concurrent[F]): F[Unit] = {
     val request = Request[F](
         method = Method.POST,
         uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
-        headers = Headers.of(Header("X-Vault-Token", token.clientToken))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
       )
     val resp = client.status(request).ensureOr( UnexpectedStatus(_) )(_.isSuccess) .void
     F.handleErrorWith(resp) { e =>
@@ -146,11 +148,11 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/system/leases.html#revoke-lease
    */
-  def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Sync[F]): F[Unit] = {
+  def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Concurrent[F]): F[Unit] = {
     val request = Request[F](
         method = Method.PUT,
         uri = vaultUri.withPath("/v1/sys/leases/revoke"),
-        headers = Headers.of(Header("X-Vault-Token", clientToken))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
       ).withEntity( Json.obj( "lease_id" -> Json.fromString(leaseId) ) )
     for {
       _ <- client.status(request)
@@ -164,15 +166,15 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
    */
-  def generateCertificate[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: CertificateRequest)(implicit F: Sync[F]): F[VaultSecret[CertificateData]] =
+  def generateCertificate[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: CertificateRequest)(implicit F: Concurrent[F]): F[VaultSecret[CertificateData]] =
     generateSecret(client, vaultUri)(token, secretPath, payload)
 
-  def generateSecret[F[_], A: Encoder, B: Decoder](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: A)(implicit F: Sync[F]): F[VaultSecret[B]] = {
+  def generateSecret[F[_], A: Encoder, B: Decoder](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: A)(implicit F: Concurrent[F]): F[VaultSecret[B]] = {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request =  Request[F](
       method = Method.POST,
       uri = vaultUri.withPath(s"/v1/$newSecretPath"),
-      headers = Headers.of(Header("X-Vault-Token", token))
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     val withBody = request.withEntity(payload.asJson)
     for {
@@ -187,7 +189,7 @@ object Vault {
     * each waitInterval
     */
   def keepLoginAndSecretLeased[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (token: VaultToken, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Timer[F]): Stream[F, A] = {
+                                                (token: VaultToken, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F]): Stream[F, A] = {
     Alternative[Option].guard(duration > waitInterval).fold(
       Stream.raiseError[F](InvalidRequirement("waitInterval longer than requested Lease Duration"))
     )(_ => Stream.empty[F]) ++
@@ -197,7 +199,7 @@ object Vault {
   }
 
   def loginAndKeepSecretLeased[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Timer[F]): Stream[F, A] =
+                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F]): Stream[F, A] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
   /**
@@ -207,9 +209,9 @@ object Vault {
     *  - Upon termination of the Stream (from the using application) revokes the token.
     *    However, any error on revoking the token is ignored.
     */
-  def keepLoginRenewed[F[_]: Concurrent](client: Client[F], vaultUri: Uri)
+  def keepLoginRenewed[F[_]: Async](client: Client[F], vaultUri: Uri)
                                 (token: VaultToken, tokenLeaseExtension: FiniteDuration)
-                                (implicit T: Timer[F]): Stream[F, String] = {
+                                (implicit T: Temporal[F]): Stream[F, String] = {
 
     def renewOnDuration(token: VaultToken): F[VaultToken] = {
       val waitInterval: Long =
@@ -233,9 +235,9 @@ object Vault {
     }
   }
 
-  def loginAndKeep[F[_]: Concurrent](client: Client[F], vaultUri: Uri)
+  def loginAndKeep[F[_]: Async](client: Client[F], vaultUri: Uri)
                                 (roleId: String, tokenLeaseExtension: FiniteDuration)
-                                (implicit T: Timer[F]): Stream[F, String] =
+                                (implicit T: Temporal[F]): Stream[F, String] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
 
 
@@ -246,7 +248,7 @@ object Vault {
     */
   def readSecretAndRetain[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri, clientToken: String)
                                                    (secretPath: String, leaseExtension: FiniteDuration)
-                                                   (implicit T: Timer[F]): Stream[F, A] = {
+                                                   (implicit T: Temporal[F]): Stream[F, A] = {
 
     def renewOnDuration(renewal: VaultSecretRenewal): F[VaultSecretRenewal] = {
       val waitInterval: Long =
@@ -283,7 +285,7 @@ object Vault {
   private[this] val decoderError: DecodingFailure => DecodeFailure =
     failure => InvalidMessageBodyFailure(s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}")
 
-  private[this] def raiseKnownError[F[_], E1, E2 <: Throwable, A](e: Either[E1, A])(errorF: E1 => E2)(implicit F: Sync[F]): F[A] =
+  private[this] def raiseKnownError[F[_], E1, E2 <: Throwable, A](e: Either[E1, A])(errorF: E1 => E2)(implicit F: ApplicativeError[F, E2]): F[A] =
     F.fromEither(e.leftMap(errorF))
 
   final case class InvalidRequirement(message: String) extends Throwable {

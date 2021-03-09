@@ -25,6 +25,7 @@ import org.http4s.client.Client
 import com.banno.vault.models.{VaultRequestError, VaultSecret}
 import io.circe.Encoder
 import org.http4s.circe._
+import cats.effect.Concurrent
 
 object Transit {
 
@@ -124,7 +125,7 @@ object Transit {
  * The way we see to use it is that, in your application you may have a certain type of data
  * that you want to encrypt or decrypt using Vault transit, with a key that is fixed for that data.
  */
-final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String, key: KeyName)(implicit F: Sync[F]) {
+final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String, key: KeyName)(implicit F: Concurrent[F]) {
 
   private implicit val encryptResponseEntityDecoder: EntityDecoder[F, EncryptResponse] = jsonOf
   private implicit val decryptResponseEntityDecoder: EntityDecoder[F, DecryptResponse] = jsonOf
