@@ -24,33 +24,25 @@ import java.util.UUID
 import org.http4s.Uri
 import org.http4s.client.Client
 import org.scalacheck.{Gen, Prop}
-import org.specs2.{ScalaCheck, Spec}
-import org.specs2.specification.core.SpecStructure
+import org.scalacheck.Prop._
+import munit.ScalaCheckSuite
 import scala.util.{Failure, Success, Try}
 import scodec.bits.ByteVector
 
-object TransitSpec extends Spec with ScalaCheck with TransitData {
-  override def is: SpecStructure =
-   s2"""
-     | encrypt works as expected when sending valid data $encryptSpec
-     | encrypt fails if the token is not recognised      $encryptForbiddenSpec
-     | decrypt works as expected when sending valid data $decryptSpec
-     | decrypt fails if the token is not recognised      $decryptForbiddenSpec
-     | encryptBatch may work for all inputs              $encryptBatchAllFineSpec
-     | decryptBatch may work for all inputs              $decryptBatchAllFineSpec
-     """.stripMargin
+class TransitSpec extends ScalaCheckSuite with TransitData {
 
   import TransitGenerators.nelGen
 
-  val encryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
+  property("encrypt works as expected when sending valid data") { Prop.forAll[TestCase, Boolean](genTestCase){ testCase =>
     val transit = new TransitClient[IO](testCase.singleMockClient, testUri, token, KeyName(keyName))
     val plainText = PlainText(Order.toBase64(testCase.order))
     val context   = Context(Agent.toBase64(testCase.agent))
-    val actual = transit.encryptInContext(plainText, context)
-    actual.unsafeRunSync().value === testCase.encrypted
+    val actual:IO[CipherText] = transit.encryptInContext(plainText, context)
+    actual.unsafeRunSync() == testCase.encrypted
   }
+}
 
-  val encryptForbiddenSpec: Prop = Prop.forAll(genTestCase){ testCase =>
+  property("encrypt fails if the token is not recognised") { Prop.forAll(genTestCase){ testCase =>
     val otoken = token + "X"
     val transit = new TransitClient[IO](testCase.singleMockClient, testUri, otoken, KeyName(keyName))
     val plainText = PlainText(Order.toBase64(testCase.order))
@@ -58,24 +50,27 @@ object TransitSpec extends Spec with ScalaCheck with TransitData {
     val actual = transit.encryptInContext(plainText, context)
     actual.attempt.unsafeRunSync().isLeft
   }
+}
 
-  val decryptSpec: Prop = Prop.forAll(genTestCase){ testCase =>
+  property("decrypt works as expected when sending valid data") { Prop.forAll(genTestCase){ testCase =>
     val transit = new TransitClient[IO](testCase.singleMockClient, testUri, token, KeyName(keyName))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.decryptInContext(testCase.encrypted, context)
       .map(pt => Order.fromBase64(pt.plaintext) )
     actual.unsafeRunSync() === Right(testCase.order)
   }
+}
 
-  val decryptForbiddenSpec: Prop = Prop.forAll(genTestCase){ testCase =>
+  property("decrypt fails if the token is not recognised ") { Prop.forAll(genTestCase){ testCase =>
     val otoken = token + "X"
     val transit = new TransitClient[IO](testCase.singleMockClient, testUri, otoken, KeyName(keyName))
     val context   = Context(Agent.toBase64(testCase.agent))
     val actual = transit.decryptInContext(testCase.encrypted, context)
     actual.attempt.unsafeRunSync().isLeft
   }
+}
 
-  val encryptBatchAllFineSpec: Prop = Prop.forAll(nelGen(genTestCase)){ testCases =>
+  property("encryptBatch may work for all inputs ") { Prop.forAll(nelGen(genTestCase)){ testCases =>
     val encCases = testCases.map(_.encryptCase)
     val mockClient = Client.fromHttpApp {
       new MockTransitService[IO](keyName, "vaultToken", encCases).routes
@@ -87,8 +82,9 @@ object TransitSpec extends Spec with ScalaCheck with TransitData {
       actual.forall(_.forall(_.isRight)) &&
       actual.forall(_.toList.zip(testCases.toList).forall { case (res, inp) => res === Right(inp.encrypted) })
   }
+}
 
-  val decryptBatchAllFineSpec: Prop = Prop.forAll(nelGen(genTestCase)){ testCases =>
+  property("decryptBatch may work for all inputs ") { Prop.forAll(nelGen(genTestCase)){ testCases =>
     val encCases = testCases.map(_.encryptCase)
     val mockClient = Client.fromHttpApp {
       new MockTransitService[IO](keyName, "vaultToken", encCases).routes
@@ -100,6 +96,7 @@ object TransitSpec extends Spec with ScalaCheck with TransitData {
       actual.forall(_.forall(_.isRight)) &&
       actual.forall(_.toList.zip(testCases.toList).forall { case (res, inp) => res === Right(inp.plaintext) })
   }
+}
 }
 
 trait TransitData {
@@ -154,7 +151,7 @@ trait TransitData {
 
   val genAgent = Gen.uuid.map(Agent(_))
 
-  val genTestCase = for {
+  val genTestCase: Gen[TestCase] = for {
     encrypted <- TransitGenerators.cipherText
     order <- genOrder
     agent <- genAgent

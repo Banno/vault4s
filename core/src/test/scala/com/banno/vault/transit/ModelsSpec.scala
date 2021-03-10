@@ -19,27 +19,20 @@ package com.banno.vault.transit
 import io.circe.Json
 import cats.data.NonEmptyList
 import cats.implicits._
-import org.specs2.{Spec, ScalaCheck}
-import org.specs2.specification.core.SpecStructure
+import munit.ScalaCheckSuite
 import org.scalacheck.Prop
 import io.circe.syntax._ 
 
-object TransitModelsSpec extends Spec with ScalaCheck {
+class TransitModelsSpec extends ScalaCheckSuite {
   import TransitGenerators._
 
-  override def is: SpecStructure = s2"""
-      |the Base64 check predicate holds for any ByteVector generated in $isBase64Prop
-      |encode an encrypt request in $encodeEncryptRequestProp
-      |decode an encrypt response in $decodeEncryptResponseProp
-      |encode a  decrypt request in $encodeDecryptRequestProp
-      |decode a  decrypt response in $decodeDecryptResponseProp
-    """.stripMargin
-
-  val isBase64Prop: Prop = Prop.forAll(byteVector){ bv => 
-    Base64.isBase64(bv.toBase64) 
+  property("The Base64 check predicate holds for any ByteVector generated in") { 
+    Prop.forAll(byteVector){ bv => 
+      Base64.isBase64(bv.toBase64) 
+    }
   }
 
-  val encodeEncryptRequestProp: Prop = 
+  property("encode an encrypt request in") {
     Prop.forAll(base64, base64){ (plaintext: Base64, context: Base64) =>
       val expected = Json.obj(
         "plaintext" -> Json.fromString(plaintext.value),
@@ -48,13 +41,18 @@ object TransitModelsSpec extends Spec with ScalaCheck {
       val input = EncryptRequest(PlainText(plaintext), Some(Context(context)))
       input.asJson === expected
     }
-
-  val decodeEncryptResultProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
-    val json = Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))
-    EncryptResult.decodeEncryptResult.decodeJson(json) === Right(EncryptResult(ct))
   }
 
-  val decodeEncryptResponseProp: Prop = Prop.forAll(cipherText){ (ct: CipherText) =>
+  
+  property("decode an encrypt response in") {
+    Prop.forAll(cipherText){ (ct: CipherText) =>
+      val json = Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))
+      EncryptResult.decodeEncryptResult.decodeJson(json) === Right(EncryptResult(ct))
+    }
+  }
+
+  property("ecode an encrypt response in $decodeEncryptResponseProp") { 
+    Prop.forAll(cipherText){ (ct: CipherText) =>
     val json = Json.obj(
       "data" -> Json.obj(
         "ciphertext" -> Json.fromString(ct.ciphertext)
@@ -62,8 +60,9 @@ object TransitModelsSpec extends Spec with ScalaCheck {
     )
     EncryptResponse.decodeEncryptResponse.decodeJson(json) === Right(EncryptResponse(EncryptResult(ct)))
   }
+}
 
-  val encodeDecryptRequestProp: Prop =
+  property("encode an decrypt request in") {
     Prop.forAll(cipherText, base64){ (ct: CipherText, context: Base64) =>
       val expected = Json.obj(
         "ciphertext" -> Json.fromString(ct.ciphertext),
@@ -71,48 +70,59 @@ object TransitModelsSpec extends Spec with ScalaCheck {
       )
       DecryptRequest(ct, Some(Context(context))).asJson === expected
     }
-
-  val decodeDecryptResultProp: Prop = Prop.forAll(base64){ (pt: Base64) =>
-    val json = Json.obj("plaintext" -> Json.fromString(pt.value))
-    DecryptResult.decodeDecryptResult.decodeJson(json) === Right(DecryptResult(PlainText(pt)))
   }
 
-  val decodeDecryptResponseProp: Prop = Prop.forAll(base64){ (plaintext: Base64) =>
-    val json = Json.obj(
-      "data" -> Json.obj( "plaintext" -> Json.fromString(plaintext.value))
-    )
-    DecryptResponse.decodeDecryptResponse.decodeJson(json) === Right(DecryptResponse(DecryptResult(PlainText(plaintext))))
+  property("decode a decrypt result in") { 
+      Prop.forAll(base64){ (pt: Base64) =>
+      val json = Json.obj("plaintext" -> Json.fromString(pt.value))
+      DecryptResult.decodeDecryptResult.decodeJson(json) === Right(DecryptResult(PlainText(pt)))
+    }
   }
 
-  val encodeEncryptBatchRequestProp: Prop = Prop.forAll(genEncryptBatchRequest){ (ebr: EncryptBatchRequest) => 
-    ebr.asJson === Json.obj( "batch_input" -> 
-      Json.fromValues( ebr.batchInput.map { 
-        case EncryptRequest(PlainText(pt), None) => 
-          Json.obj(
-            "plaintext" -> Json.fromString(pt.value)
-          )
-        case EncryptRequest(PlainText(pt), Some(Context(ctx))) => 
-          Json.obj (
-            "plaintext" -> Json.fromString(pt.value),
-            "context" -> Json.fromString(ctx.value)
-          )
-      }.toList)
-    )
+  property("decode a decrypt response in") {
+    Prop.forAll(base64){ (plaintext: Base64) =>
+      val json = Json.obj(
+        "data" -> Json.obj( "plaintext" -> Json.fromString(plaintext.value))
+      )
+      DecryptResponse.decodeDecryptResponse.decodeJson(json) === Right(DecryptResponse(DecryptResult(PlainText(plaintext))))
+    }
   }
 
-  val encodeEncryptBatchResponseProp: Prop = Prop.forAll(nelGen(cipherText)){ cts =>
-    val json = Json.obj("batch_response" -> Json.fromValues(
-      cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))).toList
-    ))
-    EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
+  property("encode EncryptBatchRequest in") {
+    Prop.forAll(genEncryptBatchRequest){ (ebr: EncryptBatchRequest) => 
+      ebr.asJson === Json.obj( "batch_input" -> 
+        Json.fromValues( ebr.batchInput.map { 
+          case EncryptRequest(PlainText(pt), None) => 
+            Json.obj(
+              "plaintext" -> Json.fromString(pt.value)
+            )
+          case EncryptRequest(PlainText(pt), Some(Context(ctx))) => 
+            Json.obj (
+              "plaintext" -> Json.fromString(pt.value),
+              "context" -> Json.fromString(ctx.value)
+            )
+        }.toList)
+      )
+    }
   }
 
-  val decodeDecryptBatchResponseProp: Prop = Prop.forAll(nelGen(base64)){ (plaintexts: NonEmptyList[Base64]) =>
-    val json = Json.obj( "batch_response" -> Json.fromValues(
-      plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson).toList
-    ))
-    val expected = DecryptBatchResults(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
-    DecryptBatchResults.decodeDecryptBatchResults.decodeJson(json) === Right(expected)
+  property("encode EncryptBatchResponse in") { 
+    Prop.forAll(nelGen(cipherText)){ cts =>
+      val json = Json.obj("batch_results" -> Json.fromValues(
+        cts.map((ct: CipherText) => Json.obj("ciphertext" -> Json.fromString(ct.ciphertext))).toList
+      ))
+      EncryptBatchResponse(cts.map((ct: CipherText) => Right(EncryptResult(ct)))).asJson === json
+    }
+  }
+
+  property("decode DecryptBatchResponse in") { 
+    Prop.forAll(nelGen(base64)){ (plaintexts: NonEmptyList[Base64]) =>
+      val json = Json.obj( "batch_results" -> Json.fromValues(
+        plaintexts.map( pt => DecryptResult(PlainText(pt)).asJson).toList
+      ))
+      val expected = DecryptBatchResults(plaintexts.map( (pt: Base64) => Right(DecryptResult(PlainText(pt)))))
+      DecryptBatchResults.decodeDecryptBatchResults.decodeJson(json) === Right(expected)
+    }
   }
 
 }

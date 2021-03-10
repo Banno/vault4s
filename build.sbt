@@ -60,6 +60,9 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 val http4sV = "0.21.20"
 val specs2V = "4.10.6"
+val munitCatsEffectV = "0.13.1"
+val munitScalaCheckV = "0.7.22"
+
 
 val kindProjectorV = "0.11.1"
 val betterMonadicForV = "0.3.1"
@@ -143,6 +146,8 @@ lazy val docs = project.in(file("docs"))
 
 // General Settings
 lazy val commonSettings = Seq(
+  testFrameworks += new TestFramework("munit.Framework"),
+
   addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
   libraryDependencies ++= Seq(
@@ -150,8 +155,9 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-circe"               % http4sV,
 
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
-    "org.specs2"                  %% "specs2-core"                % specs2V               % Test,
-    "org.specs2"                  %% "specs2-scalacheck"          % specs2V               % Test
+    "org.typelevel"               %% "munit-cats-effect-2"        % munitCatsEffectV      % Test,
+    "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test
+
   )
 )
 
