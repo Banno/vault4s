@@ -12,3 +12,4 @@ libraryDependencies ++= Seq(
   "com.banno" %% "vault4s" % "<version>"
 )
 ```
+
