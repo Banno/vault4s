@@ -25,6 +25,7 @@ import org.http4s.client.Client
 import com.banno.vault.models.{VaultRequestError, VaultSecret}
 import io.circe.Encoder
 import org.http4s.circe._
+import org.typelevel.ci.CIString
 
 object Transit {
 
@@ -137,11 +138,11 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
    */
   private val keyAsPath: String = key.name.dropWhile(_ === '/')
 
-  private val encryptUri: Uri = vaultUri.withPath(s"/v1/transit/encrypt/${keyAsPath}")
-  private val decryptUri: Uri = vaultUri.withPath(s"/v1/transit/decrypt/${keyAsPath}")
-  private val readKeyUri: Uri = vaultUri.withPath(s"/v1/transit/keys/${keyAsPath}")
+  private val encryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/encrypt/${keyAsPath}"))
+  private val decryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/decrypt/${keyAsPath}"))
+  private val readKeyUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/keys/${keyAsPath}"))
 
-  private val tokenHeaders: Headers = Headers.of(Header("X-Vault-Token", token))
+  private val tokenHeaders: Headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
 
   private def postOf[A](uri: Uri, data: A)(implicit enc: Encoder[A])  =
     Request[F](method = POST, uri = uri, headers = tokenHeaders).withEntity(enc(data))
