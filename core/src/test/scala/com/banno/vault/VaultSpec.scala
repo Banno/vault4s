@@ -26,7 +26,6 @@ import io.circe.Decoder
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.dsl.Http4sDsl
-import org.http4s.util.CaseInsensitiveString
 import org.http4s.circe._
 import org.http4s.client.Client
 
@@ -35,6 +34,7 @@ import munit.ScalaCheckSuite
 import org.scalacheck._
 import scala.util.Random
 import org.scalacheck.Prop._
+import org.typelevel.ci.CIString
 
 class VaultSpec extends ScalaCheckSuite {
 
@@ -119,7 +119,7 @@ class VaultSpec extends ScalaCheckSuite {
     import dsl._
 
     def findVaultToken(req: Request[F]): Option[String] =
-      req.headers.find(_.name == CaseInsensitiveString("X-Vault-Token")).map(_.value)
+      req.headers.get(CIString("X-Vault-Token")).map(_.head.value)
 
     def checkVaultToken(req: Request[F])(resp: F[Response[F]]): F[Response[F]] =
       if ( findVaultToken(req).contains(clientToken)) resp else BadRequest("")

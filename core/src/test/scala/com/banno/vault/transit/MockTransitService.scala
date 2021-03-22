@@ -24,7 +24,7 @@ import io.circe.Json
 import org.http4s.dsl.Http4sDsl
 import org.http4s.circe._
 import org.http4s.{DecodeFailure, EntityDecoder, HttpApp, Request, Response}
-import org.http4s.util.CaseInsensitiveString
+import org.typelevel.ci.CIString
 
 final class MockTransitService[F[_]: Sync]
   (keyname: String, token: String, encryptCases: NonEmptyList[EncryptCase])
@@ -36,7 +36,7 @@ final class MockTransitService[F[_]: Sync]
   private implicit val decryptBatchRequestEntityDecoder: EntityDecoder[F, DecryptBatchRequest] = jsonOf
 
   private def findVaultToken(req: Request[F]): Option[String] =
-    req.headers.find(_.name == CaseInsensitiveString("X-Vault-Token")).map(_.value)
+    req.headers.get(CIString("X-Vault-Token")).map(_.head.value)
 
   private def checkVaultToken(req: Request[F])(resp: F[Response[F]]): F[Response[F]] =
     findVaultToken(req) match {

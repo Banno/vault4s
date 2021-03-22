@@ -26,6 +26,7 @@ import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.client.{ Client, UnexpectedStatus }
+import org.typelevel.ci.CIString
 
 import scala.concurrent.duration._
 
@@ -75,8 +76,8 @@ object Vault {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
       method = Method.GET,
-      uri = vaultUri.withPath(s"/v1/$newSecretPath"),
-      headers = Headers.of(Header("X-Vault-Token", token))
+      uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/$newSecretPath")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     F.adaptError(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) {
       case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
@@ -92,8 +93,8 @@ object Vault {
   def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Sync[F]): F[VaultSecretRenewal] = {
     val request = Request[F](
         method = Method.PUT,
-        uri = vaultUri.withPath("/v1/sys/leases/renew"),
-        headers = Headers.of(Header("X-Vault-Token", token))
+        uri = vaultUri.withPath(Uri.Path.fromString("/v1/sys/leases/renew")),
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
       ).withEntity(
         Json.obj(
           ("lease_id", Json.fromString(leaseId)),
@@ -114,7 +115,7 @@ object Vault {
     val request = Request[F](
         method = Method.POST,
         uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-        headers = Headers.of(Header("X-Vault-Token", token.clientToken))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
       ).withEntity(
         Json.obj(
           ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
@@ -135,9 +136,9 @@ object Vault {
     val request = Request[F](
         method = Method.POST,
         uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
-        headers = Headers.of(Header("X-Vault-Token", token.clientToken))
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
       )
-    val resp = client.status(request).ensureOr( UnexpectedStatus(_) )(_.isSuccess) .void
+    val resp = client.status(request).ensureOr( UnexpectedStatus(_, request.method, request.uri ) )(_.isSuccess) .void
     F.handleErrorWith(resp) { e =>
       F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${token.clientToken.length}".some))
     }
@@ -149,12 +150,12 @@ object Vault {
   def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Sync[F]): F[Unit] = {
     val request = Request[F](
         method = Method.PUT,
-        uri = vaultUri.withPath("/v1/sys/leases/revoke"),
-        headers = Headers.of(Header("X-Vault-Token", clientToken))
+        uri = vaultUri.withPath(Uri.Path.fromString("/v1/sys/leases/revoke")),
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
       ).withEntity( Json.obj( "lease_id" -> Json.fromString(leaseId) ) )
     for {
       _ <- client.status(request)
-        .ensureOr( UnexpectedStatus(_) )(_.isSuccess)
+        .ensureOr( UnexpectedStatus(_, request.method, request.uri) )(_.isSuccess)
         .handleErrorWith { e =>
           F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${clientToken.length}".some))
         }
@@ -171,8 +172,8 @@ object Vault {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request =  Request[F](
       method = Method.POST,
-      uri = vaultUri.withPath(s"/v1/$newSecretPath"),
-      headers = Headers.of(Header("X-Vault-Token", token))
+      uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/$newSecretPath")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     val withBody = request.withEntity(payload.asJson)
     for {
