@@ -9,6 +9,6 @@ Everyone is expected to follow the [Scala Code of Conduct] when discussing the p
 Any questions, concerns, or moderation requests please contact a member of the project.
 
 - [Christopher Davenport](mailto:chris.davenport@banno.com)
-- [Zach McCoy](mailto: zach.mccoy@banno.com)
+- [Zach McCoy](mailto:zach.mccoy@banno.com)
 
 [Scala Code of Conduct]: https://www.scala-lang.org/conduct/
