@@ -18,7 +18,8 @@ package com.banno.vault.transit
 
 import cats.data.NonEmptyList
 import cats.effect.IO
-import cats.implicits._
+import cats.effect.unsafe.implicits.global
+import cats.syntax.all._
 import cats.kernel.Eq
 import java.util.UUID
 import org.http4s.Uri
@@ -28,6 +29,7 @@ import org.scalacheck.Prop._
 import munit.ScalaCheckSuite
 import scala.util.{Failure, Success, Try}
 import scodec.bits.ByteVector
+
 
 class TransitSpec extends ScalaCheckSuite with TransitData {
 

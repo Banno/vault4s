@@ -19,14 +19,13 @@ package com.banno.vault
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-import cats.effect.{IO, Sync}
-import cats.implicits._
+import cats.effect.IO
+import cats.syntax.all._
 import com.banno.vault.models.{CertificateData, CertificateRequest, VaultSecret, VaultSecretRenewal, VaultToken}
 import io.circe.Decoder
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.dsl.Http4sDsl
-import org.http4s.util.CaseInsensitiveString
 import org.http4s.circe._
 import org.http4s.client.Client
 
@@ -35,6 +34,10 @@ import munit.ScalaCheckSuite
 import org.scalacheck._
 import scala.util.Random
 import org.scalacheck.Prop._
+import org.typelevel.ci.CIString
+import cats.effect.Concurrent
+import cats.effect.unsafe.implicits.global
+
 
 class VaultSpec extends ScalaCheckSuite {
 
@@ -114,12 +117,12 @@ class VaultSpec extends ScalaCheckSuite {
 
   val validToken = VaultToken(clientToken, leaseDuration, renewable)
 
-  def mockVaultService[F[_]: Sync]: HttpRoutes[F] = {
+  def mockVaultService[F[_]: Concurrent]: HttpRoutes[F] = {
     object dsl extends Http4sDsl[F]
     import dsl._
 
     def findVaultToken(req: Request[F]): Option[String] =
-      req.headers.find(_.name == CaseInsensitiveString("X-Vault-Token")).map(_.value)
+      req.headers.get(CIString("X-Vault-Token")).map(_.head.value)
 
     def checkVaultToken(req: Request[F])(resp: F[Response[F]]): F[Response[F]] =
       if ( findVaultToken(req).contains(clientToken)) resp else BadRequest("")
@@ -447,10 +450,6 @@ property("loginAndKeepSecretLeased fails when wait duration is longer than lease
       Arbitrary.arbitrary[FiniteDuration],
       Arbitrary.arbitrary[FiniteDuration]
     ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
-    import scala.concurrent.ExecutionContext.global
-    implicit val t = IO.timer(global)
-    implicit val ct = IO.contextShift(global)
-
     Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
     .attempt
     .compile

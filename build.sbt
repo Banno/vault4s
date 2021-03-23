@@ -58,8 +58,7 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 
 
-val http4sV = "0.21.20"
-val specs2V = "4.10.6"
+val http4sV = "1.0.0-M19"
 val munitCatsEffectV = "0.13.1"
 val munitScalaCheckV = "0.7.22"
 
@@ -155,7 +154,7 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-circe"               % http4sV,
 
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
-    "org.typelevel"               %% "munit-cats-effect-2"        % munitCatsEffectV      % Test,
+    "org.typelevel"               %% "munit-cats-effect-3"        % munitCatsEffectV      % Test,
     "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test
 
   )
