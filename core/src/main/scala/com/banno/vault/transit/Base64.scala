@@ -36,7 +36,7 @@ object Base64 {
   implicit val eqBase64: Eq[Base64] = Eq.by[Base64, String](_.value)
 
   implicit final val decodeBase64: Decoder[Base64] =
-    Decoder[String].emap(Base64.fromString[Either[String, ?]])
+    Decoder[String].emap(Base64.fromString[Either[String, *]])
   implicit final val encodeBase64: Encoder[Base64] =
     Encoder.instance(bv => Json.fromString(bv.value))
 
