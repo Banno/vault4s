@@ -101,7 +101,7 @@ lazy val docs = project.in(file("docs"))
   .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)
   .enablePlugins(MicrositesPlugin)
-  .enablePlugins(TutPlugin)
+  .enablePlugins(MdocPlugin)
   .settings(commonSettings)
   .dependsOn(core)
   .settings{
@@ -126,7 +126,7 @@ lazy val docs = project.in(file("docs"))
         "gray-lighter" -> "#F4F3F4",
         "white-color" -> "#FFFFFF"
       ),
-      scalacOptions in Tut --= Seq(
+      scalacOptions in Compile --= Seq(
         "-Xfatal-warnings",
         "-Ywarn-unused-import",
         "-Ywarn-numeric-widen",
