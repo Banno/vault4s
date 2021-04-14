@@ -58,9 +58,9 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 
 
-val http4sV = "1.0.0-M19"
-val munitCatsEffectV = "0.13.1"
-val munitScalaCheckV = "0.7.23"
+val http4sV = "1.0.0-M21"
+val munitCatsEffectV = "1.0.1"
+val munitScalaCheckV = "0.7.22"
 
 
 val kindProjectorV = "0.11.3"
@@ -100,7 +100,7 @@ lazy val docs = project.in(file("docs"))
   .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)
   .enablePlugins(MicrositesPlugin)
-  .enablePlugins(TutPlugin)
+  .enablePlugins(MdocPlugin)
   .settings(commonSettings)
   .dependsOn(core)
   .settings{
@@ -125,7 +125,7 @@ lazy val docs = project.in(file("docs"))
         "gray-lighter" -> "#F4F3F4",
         "white-color" -> "#FFFFFF"
       ),
-      scalacOptions in Tut --= Seq(
+      scalacOptions in Compile --= Seq(
         "-Xfatal-warnings",
         "-Ywarn-unused-import",
         "-Ywarn-numeric-widen",

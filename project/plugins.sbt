@@ -1,5 +1,5 @@
 addSbtPlugin("io.github.davidgregory084" % "sbt-tpolecat" % "0.1.16")
-addSbtPlugin("org.tpolecat" % "tut-plugin" % "0.6.13")
+addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.19")
 addSbtPlugin("com.47deg" % "sbt-microsites" % "1.3.2")
 addSbtPlugin("com.typesafe.sbt" % "sbt-ghpages" % "0.6.3")
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.6.0")
