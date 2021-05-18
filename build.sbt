@@ -59,8 +59,8 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 
 val http4sV = "1.0.0-M21"
-val munitCatsEffectV = "1.0.3"
-val munitScalaCheckV = "0.7.22"
+val munitCatsEffectV = "1.0.1"
+val munitScalaCheckV = "0.7.26"
 
 
 val kindProjectorV = "0.11.3"
