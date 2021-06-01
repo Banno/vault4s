@@ -96,15 +96,12 @@ object Vault {
         uri = vaultUri.withPath(s"/v1/$newSecretPath").withQueryParam("list", "true"),
         headers = Headers.of(Header("X-Vault-Token", token))
       )
-    for {
-      result <- 
-        F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
-          case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
-            InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
-        }.handleErrorWith { e =>
-          F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
-        }
-    } yield result
+    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
+      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+        InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
+    }.handleErrorWith { e =>
+      F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
+    }
   }
 
   /**

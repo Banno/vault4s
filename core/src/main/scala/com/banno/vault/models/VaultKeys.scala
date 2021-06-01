@@ -18,7 +18,6 @@ package com.banno.vault.models
 
 import io.circe.Decoder
 import cats.Eq
-import cats.implicits._
 
 final case class VaultKeys(keys: List[String])
 
@@ -31,8 +30,6 @@ object VaultKeys {
       )(VaultKeys.apply)
     }
 
-  implicit val VaultKeysEq : Eq[VaultKeys] = Eq.instance[VaultKeys]((vt1, vt2) =>
-    vt1.keys === vt2.keys
-  )
+  implicit val VaultKeysEq : Eq[VaultKeys] = Eq.fromUniversalEquals[VaultKeys]
 
 }
