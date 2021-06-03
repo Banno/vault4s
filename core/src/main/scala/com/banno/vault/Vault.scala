@@ -99,8 +99,7 @@ object Vault {
     F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
       case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
         InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
-    }.handleErrorWith { e =>
-      F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
+      case e => VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some)
     }
   }
 
