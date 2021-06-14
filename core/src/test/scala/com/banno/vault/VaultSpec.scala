@@ -21,11 +21,12 @@ import java.util.concurrent.TimeUnit
 
 import cats.effect.{IO, Sync}
 import cats.implicits._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models.{CertificateData, CertificateRequest, VaultSecret, VaultSecretRenewal, VaultToken, VaultKeys}
 import io.circe.Decoder
 import org.http4s._
 import org.http4s.implicits._
 import org.http4s.dsl.Http4sDsl
+import org.http4s.dsl.impl.QueryParamDecoderMatcher
 import org.http4s.util.CaseInsensitiveString
 import org.http4s.circe._
 import org.http4s.client.Client
@@ -82,6 +83,8 @@ class VaultSpec extends ScalaCheckSuite {
 
   implicit val certificateRequestDecoder: Decoder[CertificateRequest] =
     Decoder.forProduct7("common_name", "alt_names", "ip_sans", "ttl", "format", "private_key_format", "exclude_cn_from_sans")(CertificateRequest.apply)
+
+  object ListQueryParamMatcher extends QueryParamDecoderMatcher[String]("list")
 
   val certificate: String      = UUID.randomUUID().toString
   val issuing_ca: String       = UUID.randomUUID().toString
@@ -270,6 +273,15 @@ class VaultSpec extends ScalaCheckSuite {
                   |}""".stripMargin)
           }
         }
+      case req @ GET -> Root / "v1" / "secret" / "postgres" / "" :? ListQueryParamMatcher(_) =>
+        checkVaultToken(req){
+          Ok(s"""
+                |{
+                | "data": {
+                |   "keys": ["postgres1", "postgres-pupper"]
+                | }
+                |}""".stripMargin)
+        }
 
       case GET -> path =>
         BadRequest(s"Path not mapped: $path")
@@ -406,6 +418,13 @@ property("readSecret suppresses echoing the data when JSON decoding fails") {
         },
         _ => Prop.falsified :| "Data should not be parseable"
       )
+  }
+}
+
+property("listSecrets works as expected when requesting keys under path") {
+  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+    Vault.listSecrets[IO](mockClient, uri)(clientToken, "/secret/postgres/")
+      .unsafeRunSync() == VaultKeys(List("postgres1", "postgres-pupper"))
   }
 }
 

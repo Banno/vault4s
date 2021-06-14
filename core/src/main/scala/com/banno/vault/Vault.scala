@@ -20,7 +20,7 @@ import fs2.Stream
 import cats._
 import cats.effect._
 import cats.implicits._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken, VaultKeys}
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
@@ -83,6 +83,23 @@ object Vault {
         InvalidMessageBodyFailure("Could not decode secret key value", cause.some)
     }.handleErrorWith { e =>
       F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
+    }
+  }
+
+  /**
+   *  https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET alternative https://www.vaultproject.io/api-docs#api-operations vs LIST
+   */
+  def listSecrets[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Sync[F]): F[VaultKeys] = {
+    val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
+        method = Method.GET,
+        uri = vaultUri.withPath(s"/v1/$newSecretPath").withQueryParam("list", "true"),
+        headers = Headers.of(Header("X-Vault-Token", token))
+      )
+    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
+      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+        InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
+      case e => VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some)
     }
   }
 
