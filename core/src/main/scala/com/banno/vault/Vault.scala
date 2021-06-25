@@ -20,7 +20,7 @@ import fs2.Stream
 import cats._
 import cats.effect._
 import cats.syntax.all._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken, VaultKeys}
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
@@ -77,7 +77,7 @@ object Vault {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
       method = Method.GET,
-      uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/$newSecretPath")),
+      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     F.adaptError(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) {
@@ -88,13 +88,30 @@ object Vault {
     }
   }
 
+ /**
+   *  https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET alternative https://www.vaultproject.io/api-docs#api-operations vs LIST
+   */
+  def listSecrets[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Concurrent[F]): F[VaultKeys] = {
+    val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
+        method = Method.GET,
+        uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")).withQueryParam("list", "true"),
+        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+      )
+    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
+      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+        InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
+      case e => VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some)
+    }
+  }
+
   /**
    *  https://www.vaultproject.io/api/system/leases.html#renew-lease
    */
   def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
     val request = Request[F](
         method = Method.PUT,
-        uri = vaultUri.withPath(Uri.Path.fromString("/v1/sys/leases/renew")),
+        uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/renew")),
         headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
       ).withEntity(
         Json.obj(
@@ -151,7 +168,7 @@ object Vault {
   def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Concurrent[F]): F[Unit] = {
     val request = Request[F](
         method = Method.PUT,
-        uri = vaultUri.withPath(Uri.Path.fromString("/v1/sys/leases/revoke")),
+        uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/revoke")),
         headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
       ).withEntity( Json.obj( "lease_id" -> Json.fromString(leaseId) ) )
     for {
@@ -173,7 +190,7 @@ object Vault {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request =  Request[F](
       method = Method.POST,
-      uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/$newSecretPath")),
+      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     val withBody = request.withEntity(payload.asJson)
