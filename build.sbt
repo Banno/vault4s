@@ -1,6 +1,7 @@
 val Scala213 = "2.13.3"
+val Scala3 = "3.0.0"
 
-ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213)
+ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 ThisBuild / githubWorkflowArtifactUpload := false
@@ -146,10 +147,7 @@ lazy val docs = project.in(file("docs"))
 // General Settings
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
-
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
-  addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
-  libraryDependencies ++= Seq(
+  libraryDependencies ++= List(
     "org.http4s"                  %% "http4s-client"              % http4sV,
     "org.http4s"                  %% "http4s-circe"               % http4sV,
 
@@ -157,7 +155,14 @@ lazy val commonSettings = Seq(
     "org.typelevel"               %% "munit-cats-effect-3"        % munitCatsEffectV      % Test,
     "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test
 
-  )
+  ) ++ {
+    if(scalaVersion.value.startsWith("3")) List.empty
+    else List(
+      compilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
+      //"-source:future") could bring in support for better-monadic-for changes, but also breaks other things
+      compilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV)
+    )
+  }
 )
 
 lazy val contributors = Seq(
