@@ -63,8 +63,6 @@ val specs2V = "4.12.2"
 val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
 
-ThisBuild / scalaVersion := "2.13.6"
-
 lazy val `vault4s` = project.in(file("."))
   .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)  
