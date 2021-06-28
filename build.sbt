@@ -1,8 +1,66 @@
-val http4sV = "0.21.0"
+val Scala213 = "2.13.6"
 
-val specs2V = "4.8.1"
+ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213)
+ThisBuild / scalaVersion := crossScalaVersions.value.last
 
-val kindProjectorV = "0.11.0"
+ThisBuild / githubWorkflowArtifactUpload := false
+
+val Scala213Cond = s"matrix.scala == '$Scala213'"
+
+def rubySetupSteps(cond: Option[String]) = Seq(
+  WorkflowStep.Use(
+    UseRef.Public("ruby", "setup-ruby", "v1"),
+    name = Some("Setup Ruby"),
+    params = Map("ruby-version" -> "2.6.0"),
+    cond = cond),
+
+  WorkflowStep.Run(
+    List(
+      "gem install saas",
+      "gem install jekyll -v 3.2.1"),
+    name = Some("Install microsite dependencies"),
+    cond = cond))
+
+ThisBuild / githubWorkflowBuildPreamble ++=
+  rubySetupSteps(Some(Scala213Cond))
+
+ThisBuild / githubWorkflowBuild := Seq(
+  WorkflowStep.Sbt(List("test", "mimaReportBinaryIssues")),
+
+  WorkflowStep.Sbt(
+    List("docs/makeMicrosite"),
+    cond = Some(Scala213Cond)))
+
+ThisBuild / githubWorkflowTargetTags ++= Seq("v*")
+
+// currently only publishing tags
+ThisBuild / githubWorkflowPublishTargetBranches :=
+  Seq(RefPredicate.StartsWith(Ref.Tag("v")))
+
+ThisBuild / githubWorkflowPublishPreamble ++=
+  WorkflowStep.Use(UseRef.Public("olafurpg", "setup-gpg", "v3")) +: rubySetupSteps(None)
+
+ThisBuild / githubWorkflowPublish := Seq(
+  WorkflowStep.Sbt(
+    List("ci-release"),
+    name = Some("Publish artifacts to Sonatype"),
+    env = Map(
+      "PGP_PASSPHRASE" -> "${{ secrets.PGP_PASSPHRASE }}",
+      "PGP_SECRET" -> "${{ secrets.PGP_SECRET }}",
+      "SONATYPE_PASSWORD" -> "${{ secrets.SONATYPE_PASSWORD }}",
+      "SONATYPE_USERNAME" -> "${{ secrets.SONATYPE_USERNAME }}")),
+
+  WorkflowStep.Sbt(
+    List(s"++$Scala213", "docs/publishMicrosite"),
+    name = Some("Publish microsite")
+  )
+)
+
+val http4sV = "0.21.24"
+
+val specs2V = "4.12.2"
+
+val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
@@ -39,7 +97,7 @@ lazy val docs = project.in(file("docs"))
   .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)
   .enablePlugins(MicrositesPlugin)
-  .enablePlugins(TutPlugin)
+  .enablePlugins(MdocPlugin)
   .settings(commonSettings)
   .dependsOn(core)
   .settings{
@@ -64,8 +122,7 @@ lazy val docs = project.in(file("docs"))
         "gray-lighter" -> "#F4F3F4",
         "white-color" -> "#FFFFFF"
       ),
-      fork in tut := true,
-      scalacOptions in Tut --= Seq(
+      scalacOptions in Compile --= Seq(
         "-Xfatal-warnings",
         "-Ywarn-unused-import",
         "-Ywarn-numeric-widen",
@@ -73,7 +130,6 @@ lazy val docs = project.in(file("docs"))
         "-Ywarn-unused:imports",
         "-Xlint:-missing-interpolator,_"
       ),
-      libraryDependencies += "com.47deg" %% "github4s" % "0.20.1",
       micrositePushSiteWith := GitHub4s,
       micrositeGithubToken := sys.env.get("GITHUB_TOKEN"),
       micrositeExtraMdFiles := Map(
@@ -86,8 +142,7 @@ lazy val docs = project.in(file("docs"))
 
 // General Settings
 lazy val commonSettings = Seq(
-  scalaVersion := "2.13.1",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.10"),
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.14"),
 
   addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
