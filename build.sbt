@@ -59,11 +59,11 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 
 val http4sV = "1.0.0-M23"
-val munitCatsEffectV = "1.0.1"
+val munitCatsEffectV = "1.0.5"
 val munitScalaCheckV = "0.7.26"
 
 
-val kindProjectorV = "0.11.3"
+val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
