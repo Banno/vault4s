@@ -40,44 +40,44 @@ class VaultSpec extends ScalaCheckSuite {
 
   case class RoleId(role_id: String)
   object RoleId {
-    implicit val roleIdDecoder = Decoder.instance[RoleId] { c =>
+    implicit val roleIdDecoder: Decoder[RoleId] = Decoder.instance[RoleId] { c =>
       Decoder.resultInstance.map(c.downField("role_id").as[String])(RoleId(_))
     }
   }
 
   case class RoleAndJwt(role: String, jwt: String)
   object RoleAndJwt {
-    implicit val decoder = Decoder.forProduct2("role", "jwt")(RoleAndJwt.apply)
+    implicit val decoder: Decoder[RoleAndJwt] = Decoder.forProduct2("role", "jwt")(RoleAndJwt.apply)
   }
 
   case class VaultValue(value: String)
   object VaultValue {
-    implicit val vaultValueDecoder = Decoder.instance[VaultValue] { c =>
+    implicit val vaultValueDecoder: Decoder[VaultValue] = Decoder.instance[VaultValue] { c =>
       Decoder.resultInstance.map(c.downField("value").as[String])(VaultValue(_))
     }
   }
 
   case class TokenValue(token: String)
   object TokenValue {
-    implicit val tokenValueDecoder = Decoder.instance[TokenValue]{ c =>
+    implicit val tokenValueDecoder: Decoder[TokenValue] = Decoder.instance[TokenValue]{ c =>
       Decoder.resultInstance.map(c.downField("token").as[String])(TokenValue(_))
     }
   }
   case class IncrementValue(increment: String)
   object IncrementValue {
-    implicit val incrementValueDecoder = Decoder.instance[IncrementValue]{ c =>
+    implicit val incrementValueDecoder: Decoder[IncrementValue] = Decoder.instance[IncrementValue]{ c =>
       Decoder.resultInstance.map(c.downField("increment").as[String])(IncrementValue(_))
     }
   }
 
   case class IncrementLease(lease_id: String, increment: Int)
   object IncrementLease {
-    implicit val incrementLeaseDecoder = Decoder.forProduct2("lease_id", "increment")(IncrementLease.apply)
+    implicit val incrementLeaseDecoder: Decoder[IncrementLease] = Decoder.forProduct2("lease_id", "increment")(IncrementLease.apply)
   }
 
   case class Lease(lease_id: String)
   object Lease {
-    implicit val leaseDecoder = Decoder.forProduct1("lease_id")(Lease.apply)
+    implicit val leaseDecoder: Decoder[Lease] = Decoder.forProduct1("lease_id")(Lease.apply)
   }
 
   implicit val certificateRequestDecoder: Decoder[CertificateRequest] =
@@ -278,185 +278,185 @@ class VaultSpec extends ScalaCheckSuite {
 
   val mockClient : Client[IO] = Client.fromHttpApp(mockVaultService[IO].orNotFound)
 
-property("login works as expected when sending a valid roleId") { 
-  Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
-    Vault.login(mockClient, uri)(validRoleId).unsafeRunSync() == validToken
+  property("login works as expected when sending a valid roleId") { 
+    Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
+      Vault.login(mockClient, uri)(validRoleId).unsafeRunSync() == validToken
+    }
   }
-}
-property("login should fail when sending an invalid roleId") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.login(mockClient, uri)(UUID.randomUUID().toString)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("login should fail when sending an invalid roleId") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.login(mockClient, uri)(UUID.randomUUID().toString)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
-property("login should fail when the response is not a valid") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.login(mockClient, uri)(invalidJSONRoleId)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("login should fail when the response is not a valid") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.login(mockClient, uri)(invalidJSONRoleId)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
-property("login should fail when the response doesn't contains a token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    import org.http4s.DecodeFailure
-    Vault.login(mockClient, uri)(roleIdWithoutToken)
-      .attempt
-      .unsafeRunSync()
-      .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+  property("login should fail when the response doesn't contains a token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      import org.http4s.DecodeFailure
+      Vault.login(mockClient, uri)(roleIdWithoutToken)
+        .attempt
+        .unsafeRunSync()
+        .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+    }
   }
-}
-property("login should fail when the response doesn't contains a lease duration") { 
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    import org.http4s.DecodeFailure
-    Vault.login(mockClient, uri)(roleIdWithoutLease)
-      .attempt
-      .unsafeRunSync()
-      .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+  property("login should fail when the response doesn't contains a lease duration") { 
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      import org.http4s.DecodeFailure
+      Vault.login(mockClient, uri)(roleIdWithoutLease)
+        .attempt
+        .unsafeRunSync()
+        .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+    }
   }
-}
 
-property("kubernetesLogin works as expected when sending valid role and jwt") {
-  Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
-    Vault.kubernetesLogin(mockClient, uri)(validKubernetesRole, validKubernetesJwt).unsafeRunSync() == validToken
-  }
-} 
+  property("kubernetesLogin works as expected when sending valid role and jwt") {
+    Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
+      Vault.kubernetesLogin(mockClient, uri)(validKubernetesRole, validKubernetesJwt).unsafeRunSync() == validToken
+    }
+  } 
 
-property("kubernetesLogin should fail when sending an invalid roleId") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.kubernetesLogin(mockClient, uri)(UUID.randomUUID().toString, validKubernetesJwt)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("kubernetesLogin should fail when sending an invalid roleId") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.kubernetesLogin(mockClient, uri)(UUID.randomUUID().toString, validKubernetesJwt)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
 
-property("kubernetesLogin should fail when the response is not a valid JSON") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.kubernetesLogin(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("kubernetesLogin should fail when the response is not a valid JSON") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.kubernetesLogin(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
 
-property("kubernetesLogin should fail when the response doesn't contains a token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    import org.http4s.DecodeFailure
-    Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutToken, validKubernetesJwt)
-      .attempt
-      .unsafeRunSync()
-      .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+  property("kubernetesLogin should fail when the response doesn't contains a token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      import org.http4s.DecodeFailure
+      Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutToken, validKubernetesJwt)
+        .attempt
+        .unsafeRunSync()
+        .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+    }
   }
-}
 
-property("kubernetesLogin should fail when the response doesn't contains a lease duration") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    import org.http4s.DecodeFailure
-    Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutLease, validKubernetesJwt)
-      .attempt
-      .unsafeRunSync()
-      .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+  property("kubernetesLogin should fail when the response doesn't contains a lease duration") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      import org.http4s.DecodeFailure
+      Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutLease, validKubernetesJwt)
+        .attempt
+        .unsafeRunSync()
+        .leftMap(_.isInstanceOf[DecodeFailure]) == Left(true)
+    }
   }
-}
 
-property("readSecret works as expected when requesting the postgres password with a valid") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPostgresPassPath)
-      .unsafeRunSync() == VaultSecret(VaultValue(postgresPass), leaseDuration.some, leaseId.some, renewable.some)
+  property("readSecret works as expected when requesting the postgres password with a valid") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPostgresPassPath)
+        .unsafeRunSync() == VaultSecret(VaultValue(postgresPass), leaseDuration.some, leaseId.some, renewable.some)
+    }
   }
-}
 
-property("readSecret works as expected when requesting the private key with a valid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
-      .unsafeRunSync() == VaultSecret(VaultValue(privateKey), leaseDuration.some, leaseId.some, renewable.some)
+  property("readSecret works as expected when requesting the private key with a valid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.readSecret[IO, VaultValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
+        .unsafeRunSync() == VaultSecret(VaultValue(privateKey), leaseDuration.some, leaseId.some, renewable.some)
+    }
   }
-}
 
-property("readSecret works as expected when requesting the postgres password with an invalid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.readSecret[IO, VaultValue](mockClient, uri)(UUID.randomUUID().toString, secretPostgresPassPath)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("readSecret works as expected when requesting the postgres password with an invalid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.readSecret[IO, VaultValue](mockClient, uri)(UUID.randomUUID().toString, secretPostgresPassPath)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
 
-property("readSecret works as expected when requesting the private key with an invalid token") { 
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.readSecret[IO, VaultValue](mockClient, uri)(UUID.randomUUID().toString, secretPrivateKeyPath)
-      .attempt
-      .unsafeRunSync()
-      .isLeft
+  property("readSecret works as expected when requesting the private key with an invalid token") { 
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.readSecret[IO, VaultValue](mockClient, uri)(UUID.randomUUID().toString, secretPrivateKeyPath)
+        .attempt
+        .unsafeRunSync()
+        .isLeft
+    }
   }
-}
 
-property("readSecret suppresses echoing the data when JSON decoding fails") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.readSecret[IO, TokenValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
-      .attempt
-      .unsafeRunSync()
-      .fold(
-        { error =>
-          if (error.getMessage.contains(privateKey)) Prop.falsified :| "Secret data in the error message"
-          else Prop.passed :| "Secret data redacted"
-        },
-        _ => Prop.falsified :| "Data should not be parseable"
-      )
+  property("readSecret suppresses echoing the data when JSON decoding fails") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.readSecret[IO, TokenValue](mockClient, uri)(clientToken, secretPrivateKeyPath)
+        .attempt
+        .unsafeRunSync()
+        .fold(
+          { error =>
+            if (error.getMessage.contains(privateKey)) Prop.falsified :| "Secret data in the error message"
+            else Prop.passed :| "Secret data redacted"
+          },
+          _ => Prop.falsified :| "Data should not be parseable"
+        )
+    }
   }
-}
 
-property("renewToken works as expected when sending a valid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.renewSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true), 1.hour)
-      .unsafeRunSync() === VaultToken(clientToken, 3600, renewable)
+  property("renewToken works as expected when sending a valid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.renewSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true), 1.hour)
+        .unsafeRunSync() === VaultToken(clientToken, 3600, renewable)
+    }
   }
-}
 
-property("revokeToken works as expected when revoking a valid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){ uri =>
-    Vault.revokeSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true)).unsafeRunSync() ===( () )
+  property("revokeToken works as expected when revoking a valid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){ uri =>
+      Vault.revokeSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true)).unsafeRunSync() ===( () )
+    }
   }
-}
 
-property("renewLease works as expected when sending valid input arguments") {
-  Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
-    Vault.renewLease(mockClient, uri)(leaseId, increment, clientToken).unsafeRunSync() == VaultSecretRenewal(leaseDuration, leaseId, renewable)
+  property("renewLease works as expected when sending valid input arguments") {
+    Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
+      Vault.renewLease(mockClient, uri)(leaseId, increment, clientToken).unsafeRunSync() == VaultSecretRenewal(leaseDuration, leaseId, renewable)
+    }
   }
-}
 
-property("revokeLease works as expected when sending valid input arguments") {
-  Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
-    Vault.revokeLease(mockClient, uri)(clientToken, leaseId).unsafeRunSync() ===( () )
+  property("revokeLease works as expected when sending valid input arguments") {
+    Prop.forAll(VaultArbitraries.validVaultUri) { uri =>
+      Vault.revokeLease(mockClient, uri)(clientToken, leaseId).unsafeRunSync() ===( () )
+    }
   }
-}
 
-property("generateCertificate works as expected when sending a valid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri, VaultArbitraries.certRequestGen) { (uri, certRequest) =>
-    Vault.generateCertificate(mockClient, uri)(clientToken, generateCertsPath, certRequest)
-      .unsafeRunSync() === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration.some, leaseId.some, renewable.some)
+  property("generateCertificate works as expected when sending a valid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri, VaultArbitraries.certRequestGen) { (uri, certRequest) =>
+      Vault.generateCertificate(mockClient, uri)(clientToken, generateCertsPath, certRequest)
+        .unsafeRunSync() === VaultSecret(CertificateData(certificate, issuing_ca, List(ca_chain), private_key, private_key_type, serial_number), leaseDuration.some, leaseId.some, renewable.some)
+    }
   }
-}
 
-property("loginAndKeepSecretLeased fails when wait duration is longer than lease duration") {
-  Prop.forAll(
-      VaultArbitraries.validVaultUri,
-      Arbitrary.arbitrary[FiniteDuration],
-      Arbitrary.arbitrary[FiniteDuration]
-    ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
+  property("loginAndKeepSecretLeased fails when wait duration is longer than lease duration") {
+    Prop.forAll(
+        VaultArbitraries.validVaultUri,
+        Arbitrary.arbitrary[FiniteDuration],
+        Arbitrary.arbitrary[FiniteDuration]
+      ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
     import scala.concurrent.ExecutionContext.global
     implicit val t = IO.timer(global)
     implicit val ct = IO.contextShift(global)
 
-    Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
-    .attempt
-    .compile
-    .last
-    .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
-  }}
-}
+      Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
+      .attempt
+      .compile
+      .last
+      .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
+    }}
+  }
 
 }

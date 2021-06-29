@@ -138,9 +138,9 @@ final class TransitClient[F[_]](client: Client[F], vaultUri: Uri, token: String,
    */
   private val keyAsPath: String = key.name.dropWhile(_ === '/')
 
-  private val encryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/encrypt/${keyAsPath}"))
-  private val decryptUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/decrypt/${keyAsPath}"))
-  private val readKeyUri: Uri = vaultUri.withPath(Uri.Path.fromString(s"/v1/transit/keys/${keyAsPath}"))
+  private val encryptUri: Uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/transit/encrypt/${keyAsPath}"))
+  private val decryptUri: Uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/transit/decrypt/${keyAsPath}"))
+  private val readKeyUri: Uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/transit/keys/${keyAsPath}"))
 
   private val tokenHeaders: Headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
 
