@@ -34,6 +34,9 @@ ThisBuild / githubWorkflowBuild := Seq(
 
 ThisBuild / githubWorkflowTargetTags ++= Seq("v*")
 
+ThisBuild / githubWorkflowTargetBranches :=
+  Seq("*", "series/*")
+
 // currently only publishing tags
 ThisBuild / githubWorkflowPublishTargetBranches :=
   Seq(RefPredicate.StartsWith(Ref.Tag("v")))
