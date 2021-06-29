@@ -1,4 +1,4 @@
-val Scala213 = "2.13.3"
+val Scala213 = "2.13.6"
 
 ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
@@ -56,15 +56,12 @@ ThisBuild / githubWorkflowPublish := Seq(
   )
 )
 
-
-
-val http4sV = "0.21.20"
+val http4sV = "0.21.24"
 val specs2V = "4.10.6"
 val munitCatsEffectV = "0.13.1"
 val munitScalaCheckV = "0.7.22"
 
-
-val kindProjectorV = "0.11.3"
+val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
@@ -147,6 +144,7 @@ lazy val docs = project.in(file("docs"))
 // General Settings
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.14"),
 
   addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
