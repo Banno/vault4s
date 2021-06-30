@@ -25,7 +25,6 @@ import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
-import org.http4s.implicits._
 import org.http4s.client.{ Client, UnexpectedStatus }
 import org.typelevel.ci.CIString
 
