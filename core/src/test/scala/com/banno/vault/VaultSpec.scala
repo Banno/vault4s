@@ -27,7 +27,6 @@ import org.http4s._
 import org.http4s.implicits._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
-import org.http4s.util.CaseInsensitiveString
 import org.http4s.circe._
 import org.http4s.client.Client
 
@@ -422,17 +421,18 @@ class VaultSpec extends ScalaCheckSuite {
     }
   }
 
-property("listSecrets works as expected when requesting keys under path") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.listSecrets[IO](mockClient, uri)(clientToken, "/secret/postgres/")
-      .unsafeRunSync() == VaultKeys(List("postgres1", "postgres-pupper"))
+  property("listSecrets works as expected when requesting keys under path") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.listSecrets[IO](mockClient, uri)(clientToken, "/secret/postgres/")
+        .unsafeRunSync() == VaultKeys(List("postgres1", "postgres-pupper"))
+    }
   }
-}
 
-property("renewToken works as expected when sending a valid token") {
-  Prop.forAll(VaultArbitraries.validVaultUri){uri =>
-    Vault.renewSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true), 1.hour)
-      .unsafeRunSync() === VaultToken(clientToken, 3600, renewable)
+  property("renewToken works as expected when sending a valid token") {
+    Prop.forAll(VaultArbitraries.validVaultUri){uri =>
+      Vault.renewSelfToken[IO](mockClient, uri)(VaultToken(clientToken, 3600, true), 1.hour)
+        .unsafeRunSync() === VaultToken(clientToken, 3600, renewable)
+    }
   }
 
   property("revokeToken works as expected when revoking a valid token") {
