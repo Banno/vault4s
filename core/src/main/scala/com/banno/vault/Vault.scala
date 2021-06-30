@@ -95,7 +95,7 @@ object Vault {
     val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
         method = Method.GET,
-        uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/$newSecretPath")).withQueryParam("list", "true"),
+        uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")).withQueryParam("list", "true"),
         headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
       )
     F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
