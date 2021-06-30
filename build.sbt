@@ -1,7 +1,8 @@
-val Scala213 = "2.13.3"
+val Scala213 = "2.13.6"
 val Scala3 = "3.0.0"
 
-ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213, Scala3)
+
+ThisBuild / crossScalaVersions := Seq("2.12.14", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 ThisBuild / githubWorkflowArtifactUpload := false
@@ -61,13 +62,12 @@ ThisBuild / githubWorkflowPublish := Seq(
 )
 
 
-
 val http4sV = "0.22.0-RC1"
 val specs2V = "4.10.6"
 val munitCatsEffectV = "1.0.5"
 val munitScalaCheckV = "0.7.26"
 
-val kindProjectorV = "0.11.3"
+val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project.in(file("."))
@@ -150,7 +150,7 @@ lazy val docs = project.in(file("docs"))
 // General Settings
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
-  libraryDependencies ++= List(
+  libraryDependencies ++= Seq(
     "org.http4s"                  %% "http4s-client"              % http4sV,
     "org.http4s"                  %% "http4s-circe"               % http4sV,
 
