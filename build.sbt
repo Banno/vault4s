@@ -1,6 +1,6 @@
 val Scala213 = "2.13.6"
 
-ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213)
+ThisBuild / crossScalaVersions := Seq("2.12.14", Scala213)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 ThisBuild / githubWorkflowArtifactUpload := false
@@ -142,8 +142,6 @@ lazy val docs = project.in(file("docs"))
 
 // General Settings
 lazy val commonSettings = Seq(
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.14"),
-
   addCompilerPlugin("org.typelevel" %% "kind-projector" % kindProjectorV cross CrossVersion.full),
   addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
   libraryDependencies ++= Seq(
