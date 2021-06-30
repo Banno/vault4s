@@ -122,7 +122,7 @@ lazy val docs = project.in(file("docs"))
         "gray-lighter" -> "#F4F3F4",
         "white-color" -> "#FFFFFF"
       ),
-      scalacOptions in Compile --= Seq(
+      Compile / scalacOptions --= Seq(
         "-Xfatal-warnings",
         "-Ywarn-unused-import",
         "-Ywarn-numeric-widen",
@@ -151,7 +151,13 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.specs2"                  %% "specs2-core"                % specs2V               % Test,
     "org.specs2"                  %% "specs2-scalacheck"          % specs2V               % Test
-  )
+  ),
+  Compile / doc / scalacOptions ++= Seq(
+    "-groups",
+    "-sourcepath", (LocalRootProject / baseDirectory).value.getAbsolutePath,
+    "-doc-source-url", "https://github.com/banno/vault4s/blob/v" + version.value + "€{FILE_PATH}.scala"
+  ),
+  pomIncludeRepository := { _ => false}
 )
 
 lazy val contributors = Seq(
@@ -176,12 +182,6 @@ inThisBuild(List(
       Developer(username, name, "", url(s"http://github.com/$username"))
     },
   }.toList,
-  scalacOptions in (Compile, doc) ++= Seq(
-      "-groups",
-      "-sourcepath", (baseDirectory in LocalRootProject).value.getAbsolutePath,
-      "-doc-source-url", "https://github.com/banno/vault4s/blob/v" + version.value + "€{FILE_PATH}.scala"
-  ),
-  pomIncludeRepository := { _ => false},
 
   organizationName := "Jack Henry & Associates, Inc.®",
   startYear := Some(2019),
