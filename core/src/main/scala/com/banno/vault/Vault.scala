@@ -205,8 +205,8 @@ object Vault {
     * This function logs in, requests a secret and then continually asks for a duration extension of the lease after
     * each waitInterval
     */
-  def keepLoginAndSecretLeased[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (token: VaultToken, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F]): Stream[F, A] = {
+  def keepLoginAndSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
+                                                (token: VaultToken, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] = {
     Alternative[Option].guard(duration > waitInterval).fold(
       Stream.raiseError[F](InvalidRequirement("waitInterval longer than requested Lease Duration"))
     )(_ => Stream.empty[F]) ++
@@ -215,8 +215,8 @@ object Vault {
     }
   }
 
-  def loginAndKeepSecretLeased[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F]): Stream[F, A] =
+  def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
+                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
   /**
@@ -226,7 +226,7 @@ object Vault {
     *  - Upon termination of the Stream (from the using application) revokes the token.
     *    However, any error on revoking the token is ignored.
     */
-  def keepLoginRenewed[F[_]: Concurrent](client: Client[F], vaultUri: Uri)
+  def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)
                                 (token: VaultToken, tokenLeaseExtension: FiniteDuration)
                                 (implicit T: Temporal[F]): Stream[F, String] = {
 
@@ -262,7 +262,7 @@ object Vault {
     *  It then also provides a Stream that continuously renews the lease on that secret, when it is about to finish.
     *  Upon termination of the Stream (from the using application) revokes the token (but any error on revokation is ignored).
     */
-  def readSecretAndRetain[F[_]: Concurrent, A: Decoder](client: Client[F], vaultUri: Uri, clientToken: String)
+  def readSecretAndRetain[F[_], A: Decoder](client: Client[F], vaultUri: Uri, clientToken: String)
                                                    (secretPath: String, leaseExtension: FiniteDuration)
                                                    (implicit T: Temporal[F]): Stream[F, A] = {
 
