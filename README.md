@@ -4,7 +4,7 @@
 
 ## Quick Start
 
-To use vault4s in an existing SBT project with Scala 2.11 or later, add the following dependencies to your
+To use vault4s in an existing SBT project with Scala 2.12 or later, add the following dependencies to your
 `build.sbt` depending on your needs:
 
 ```scala
