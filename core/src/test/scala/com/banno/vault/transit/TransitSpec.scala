@@ -23,6 +23,7 @@ import cats.syntax.all._
 import cats.kernel.Eq
 import java.util.UUID
 import org.http4s.Uri
+import org.http4s.implicits._
 import org.http4s.client.Client
 import org.scalacheck.{Gen, Prop}
 import org.scalacheck.Prop._
@@ -166,5 +167,5 @@ trait TransitData {
       ByteVector.fromBase64Descriptive(b64.value).map(bv => new String(bv.toArray, "UTF-8"))
   }
 
-  val testUri: Uri =  Uri.uri("http://vault.test.com")
+  val testUri: Uri =  uri"http://vault.test.com"
 }

@@ -49,7 +49,7 @@ object KeyDetails {
       )
     )}
 
-    implicit final val decodeKeyDetails: Decoder[KeyDetails] = {
+  implicit final val decodeKeyDetails: Decoder[KeyDetails] = {
       implicit val decodeInstantSecond: Decoder[Instant] =
         Decoder.decodeLong.emap { numsec =>
           if (numsec <= Instant.MAX.getEpochSecond)
