@@ -108,7 +108,7 @@ object Vault {
   /**
    *  https://www.vaultproject.io/api/system/leases.html#renew-lease
    */
-  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Concurrent[F], M: Monad[F]): F[VaultSecretRenewal] = {
+  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
     val request = Request[F](
         method = Method.PUT,
         uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/renew")),
