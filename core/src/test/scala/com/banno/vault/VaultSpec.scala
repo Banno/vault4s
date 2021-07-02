@@ -470,11 +470,10 @@ class VaultSpec extends ScalaCheckSuite {
         Arbitrary.arbitrary[FiniteDuration]
       ) { case (uri, leaseDuration, waitInterval) => leaseDuration < waitInterval ==> {
       Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
-      .attempt
-      .compile
-      .last
-      .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
+        .attempt
+        .compile
+        .last
+        .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
     }}
   }
-
 }

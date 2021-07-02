@@ -61,12 +61,10 @@ ThisBuild / githubWorkflowPublish := Seq(
   )
 )
 
-
-
 val http4sV = "0.23.0-RC1"
 val munitCatsEffectV = "1.0.5"
 val munitScalaCheckV = "0.7.26"
-
+val scalacheckEffectV = "1.0.2"
 
 val kindProjectorV = "0.13.0"
 val betterMonadicForV = "0.3.1"
@@ -157,7 +155,8 @@ lazy val commonSettings = Seq(
 
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.typelevel"               %% "munit-cats-effect-3"        % munitCatsEffectV      % Test,
-    "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test
+    "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test,
+    "org.typelevel"               %% "scalacheck-effect"          % scalacheckEffectV     % Test,
 
   ) ++ {
     if(scalaVersion.value.startsWith("3")) List.empty
