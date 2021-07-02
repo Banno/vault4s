@@ -32,9 +32,10 @@ object VaultClient {
     } yield impl(client, vaultUri, token)
   }
 
-  private def impl[F[_]: Concurrent](client: Client[F], vaultUri: Uri, token: VaultToken): VaultClient[F] =
+  private def impl[F[_]: Concurrent](client: Client[F], vaultUri: Uri, tokenRef: Ref[F, VaultToken]): VaultClient[F] =
     new VaultClient[F] {
       def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]] =
-        Vault.readSecret(client, vaultUri)(token.clientToken, secretPath)
+        tokenRef.get.flatMap(token =>
+          Vault.readSecret(client, vaultUri)(token.clientToken, secretPath))
     }
 }
