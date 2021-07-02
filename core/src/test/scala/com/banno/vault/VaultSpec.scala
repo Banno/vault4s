@@ -34,7 +34,6 @@ import scala.concurrent.duration._
 import munit.{CatsEffectSuite, ScalaCheckSuite}
 import org.scalacheck._
 import scala.util.Random
-import org.scalacheck.Prop._
 import org.scalacheck.effect.PropF
 import org.typelevel.ci.CIString
 
