@@ -7,7 +7,7 @@ layout: home
 
 ## Quick Start
 
-To use vault4s in an existing SBT project with Scala 2.11 or a later version, add the following dependencies to your
+To use vault4s in an existing SBT project with Scala 2.12 or later, add the following dependencies to your
 `build.sbt` depending on your needs:
 
 ```scala
@@ -15,3 +15,15 @@ libraryDependencies ++= Seq(
   "com.banno" %% "vault4s" % "<version>"
 )
 ```
+
+### Version matrix
+
+vault4s practices [semantic versioning](https://semver.org/).  Select a major version compatible with your version of [http4s](https://http4s.org/) and Scala:
+
+| Vault4s | http4s | Scala 2.11 | Scala 2.12 | Scala 2.13 | Scala 3 | Status    |
+|--------:|-------:|:----------:|:----------:|:----------:|:-------:|:----------|
+|     9.x | 0.23.x | ⛔         | ✓          | ✓          | ✓       | Milestone |
+|     8.x | 0.22.x | ⛔         | ✓          | ✓          | ✓       | Milestone |
+|     7.x | 0.21.x | ⛔         | ✓          | ✓          | ⛔      | Stable    |
+|     6.x | 0.21.x | ⛔         | ✓          | ✓          | ⛔      | EOL       |
+|     5.x | 0.20.x | ✓          | ✓          | ⛔         | ⛔      | EOL       |
