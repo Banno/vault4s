@@ -1,7 +1,8 @@
-val Scala213 = "2.13.3"
+val Scala213 = "2.13.6"
 val Scala3 = "3.0.0"
 
-ThisBuild / crossScalaVersions := Seq("2.12.12", Scala213, Scala3)
+
+ThisBuild / crossScalaVersions := Seq("2.12.14", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 ThisBuild / githubWorkflowArtifactUpload := false
@@ -33,6 +34,9 @@ ThisBuild / githubWorkflowBuild := Seq(
     cond = Some(Scala213Cond)))
 
 ThisBuild / githubWorkflowTargetTags ++= Seq("v*")
+
+ThisBuild / githubWorkflowTargetBranches :=
+  Seq("*", "series/*")
 
 // currently only publishing tags
 ThisBuild / githubWorkflowPublishTargetBranches :=
@@ -147,7 +151,7 @@ lazy val docs = project.in(file("docs"))
 // General Settings
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
-  libraryDependencies ++= List(
+  libraryDependencies ++= Seq(
     "org.http4s"                  %% "http4s-client"              % http4sV,
     "org.http4s"                  %% "http4s-circe"               % http4sV,
 

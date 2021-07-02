@@ -476,5 +476,4 @@ class VaultSpec extends ScalaCheckSuite {
       .unsafeRunSync() == Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration")))
     }}
   }
-
 }
