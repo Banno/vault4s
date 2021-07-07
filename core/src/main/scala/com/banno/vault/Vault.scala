@@ -219,16 +219,9 @@ object Vault {
                                                 (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
-  /**
-    * This function logs into the Vault server given by the vaultUri, to obtain a loginToken.
-    *  It then also provides a Stream that continuously renews the token when it is about to finish.
-    *  - keeps the token constantly renewed
-    *  - Upon termination of the Stream (from the using application) revokes the token.
-    *    However, any error on revoking the token is ignored.
-    */
-  def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)
+  def tokenStream[F[_]](client: Client[F], vaultUri: Uri)
                                 (token: VaultToken, tokenLeaseExtension: FiniteDuration)
-                                (implicit T: Temporal[F]): Stream[F, String] = {
+                                (implicit T: Temporal[F]): Stream[F, VaultToken] = {
 
     def renewOnDuration(token: VaultToken): F[VaultToken] = {
       val waitInterval: Long =
@@ -248,9 +241,20 @@ object Vault {
     def cleanup(token: VaultToken): F[Unit] = revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
 
     Stream.bracket(token.pure[F])(cleanup).flatMap { token =>
-      Stream.emit(token.clientToken).concurrently(keep(token))
+      Stream.emit(token).concurrently(keep(token))
     }
   }
+
+  /**
+    * This function logs into the Vault server given by the vaultUri, to obtain a loginToken.
+    *  It then also provides a Stream that continuously renews the token when it is about to finish.
+    *  - keeps the token constantly renewed
+    *  - Upon termination of the Stream (from the using application) revokes the token.
+    *    However, any error on revoking the token is ignored.
+    */
+  def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)
+                                (token: VaultToken, tokenLeaseExtension: FiniteDuration)(implicit T: Temporal[F]): Stream[F, String] =
+    tokenStream(client, vaultUri)(token, tokenLeaseExtension).map(_.clientToken)
 
   def loginAndKeep[F[_]: Async](client: Client[F], vaultUri: Uri)
                                 (roleId: String, tokenLeaseExtension: FiniteDuration): Stream[F, String] =
