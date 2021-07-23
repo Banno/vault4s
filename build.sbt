@@ -58,8 +58,8 @@ ThisBuild / githubWorkflowPublish := Seq(
 
 val http4sV = "0.21.24"
 val specs2V = "4.10.6"
-val munitCatsEffectV = "0.13.1"
-val munitScalaCheckV = "0.7.22"
+val munitCatsEffectV = "1.0.5"
+val munitScalaCheckV = "0.7.27"
 val scalacheckEffectV = "1.0.2"
 
 val kindProjectorV = "0.13.0"
@@ -93,6 +93,8 @@ lazy val core = project.in(file("core"))
         exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.PlainText.unapply")
       )
     },
+    // Alas, these failed to publish
+    mimaVersionCheckExcludedVersions ++= Set("7.1.0", "7.1.1")
   )
 
 lazy val docs = project.in(file("docs"))
@@ -155,7 +157,7 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.typelevel"               %% "munit-cats-effect-2"        % munitCatsEffectV      % Test,
     "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test,
-    "org.typelevel"               %% "scalacheck-effect"          % scalacheckEffectV     % Test,
+    "org.typelevel"               %% "scalacheck-effect-munit"    % scalacheckEffectV     % Test,
   )
 )
 

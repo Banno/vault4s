@@ -32,12 +32,12 @@ import org.http4s.circe._
 import org.http4s.client.Client
 
 import scala.concurrent.duration._
-import munit.{CatsEffectSuite, ScalaCheckSuite}
+import munit.{CatsEffectSuite, ScalaCheckEffectSuite}
 import org.scalacheck._
 import scala.util.Random
 import org.scalacheck.effect.PropF
 
-class VaultSpec extends CatsEffectSuite with ScalaCheckSuite with MissingPieces {
+class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingPieces {
 
   case class RoleId(role_id: String)
   object RoleId {
@@ -471,5 +471,4 @@ test("loginAndKeepSecretLeased fails when wait duration is longer than lease dur
     .assertEquals(Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration"))))
   }}
 }
-
 }
