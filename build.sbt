@@ -93,6 +93,8 @@ lazy val core = project.in(file("core"))
         exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.PlainText.unapply")
       )
     },
+    // Alas, these failed to publish
+    mimaVersionCheckExcludedVersions ++= Set("7.1.0", "7.1.1")
   )
 
 lazy val docs = project.in(file("docs"))
