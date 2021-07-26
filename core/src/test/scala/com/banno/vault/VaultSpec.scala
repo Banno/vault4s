@@ -102,6 +102,7 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
   val validKubernetesJwt: String = Random.alphanumeric.take(20).mkString //simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
 
   val clientToken: String       = UUID.randomUUID().toString
+  val altClientToken: String    = UUID.randomUUID().toString
   val leaseDuration: Long       = Random.nextLong()
   val leaseId: String           = UUID.randomUUID().toString
   val renewable: Boolean        = Random.nextBoolean()
@@ -116,6 +117,7 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
   val generateCertsPath: String = "pki/issue/ip"
 
   val validToken = VaultToken(clientToken, leaseDuration, renewable)
+  val altValidToken = VaultToken(altClientToken, leaseDuration, renewable)
 
   def mockVaultService[F[_]: Sync]: HttpRoutes[F] = {
     object dsl extends Http4sDsl[F]
@@ -211,6 +213,20 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
                   |{
                   | "auth": {
                   |   "client_token": "$clientToken"
+                  | }
+                  |}""".stripMargin)
+          case _ =>
+            BadRequest("")
+        }
+      case req @ POST -> Root / "v1" / "auth" / "kubernetes2" / "login" =>
+        req.decodeJson[RoleAndJwt].flatMap {
+          case RoleAndJwt(`validKubernetesRole`, `validKubernetesJwt`) =>
+            Ok(s"""
+                  |{
+                  | "auth": {
+                  |   "client_token": "$altClientToken",
+                  |   "lease_duration": $leaseDuration,
+                  |   "renewable": $renewable
                   | }
                   |}""".stripMargin)
           case _ =>
@@ -330,44 +346,50 @@ test("login should fail when the response doesn't contains a lease duration") {
   }
 }
 
-test("kubernetesLogin works as expected when sending valid role and jwt") {
+test("loginKubernetes works as expected when sending valid role and jwt") {
   PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-    Vault.kubernetesLogin(mockClient, uri)(validKubernetesRole, validKubernetesJwt).assertEquals(validToken)
+    Vault.loginKubernetes(mockClient, uri)(validKubernetesRole, validKubernetesJwt).assertEquals(validToken)
   }
 } 
 
-test("kubernetesLogin should fail when sending an invalid roleId") {
+test("loginKubernetes respects alternate mount points") {
+  PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+    Vault.loginKubernetes(mockClient, uri)(validKubernetesRole, validKubernetesJwt, "/auth/kubernetes2").assertEquals(altValidToken)
+  }
+}
+
+test("loginKubernetes should fail when sending an invalid roleId") {
   PropF.forAllF(VaultArbitraries.validVaultUri){uri =>
-    Vault.kubernetesLogin(mockClient, uri)(UUID.randomUUID().toString, validKubernetesJwt)
+    Vault.loginKubernetes(mockClient, uri)(UUID.randomUUID().toString, validKubernetesJwt)
       .attempt
       .map(_.isLeft)
       .assert
   }
 }
 
-test("kubernetesLogin should fail when the response is not a valid JSON") {
+test("loginKubernetes should fail when the response is not a valid JSON") {
   PropF.forAllF(VaultArbitraries.validVaultUri){uri =>
-    Vault.kubernetesLogin(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
+    Vault.loginKubernetes(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
       .attempt
       .map(_.isLeft)
       .assert
   }
 }
 
-test("kubernetesLogin should fail when the response doesn't contains a token") {
+test("loginKubernetes should fail when the response doesn't contains a token") {
   PropF.forAllF(VaultArbitraries.validVaultUri){uri =>
     import org.http4s.DecodeFailure
-    Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutToken, validKubernetesJwt)
+    Vault.loginKubernetes(mockClient, uri)(roleIdWithoutToken, validKubernetesJwt)
       .attempt
       .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
       .assertEquals(Left(true))
   }
 }
 
-test("kubernetesLogin should fail when the response doesn't contains a lease duration") {
+test("loginKubernetes should fail when the response doesn't contains a lease duration") {
   PropF.forAllF(VaultArbitraries.validVaultUri){uri =>
     import org.http4s.DecodeFailure
-    Vault.kubernetesLogin(mockClient, uri)(roleIdWithoutLease, validKubernetesJwt)
+    Vault.loginKubernetes(mockClient, uri)(roleIdWithoutLease, validKubernetesJwt)
       .attempt
       .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
       .assertEquals(Left(true))
