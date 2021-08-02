@@ -156,7 +156,7 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.typelevel"               %% "munit-cats-effect-3"        % munitCatsEffectV      % Test,
     "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test,
-    "org.typelevel"               %% "scalacheck-effect"          % scalacheckEffectV     % Test,
+    "org.typelevel"               %% "scalacheck-effect-munit"    % scalacheckEffectV     % Test,
 
   ) ++ {
     if(scalaVersion.value.startsWith("3")) List.empty
