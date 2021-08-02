@@ -99,6 +99,8 @@ lazy val core = project.in(file("core"))
         exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.PlainText.unapply")
       )
     },
+    // Alas, these failed to publish
+    mimaVersionCheckExcludedVersions ++= Set("7.1.0", "7.1.1")
   )
 
 lazy val docs = project.in(file("docs"))
@@ -158,7 +160,7 @@ lazy val commonSettings = Seq(
     "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
     "org.typelevel"               %% "munit-cats-effect-2"        % munitCatsEffectV      % Test,
     "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test,
-    "org.typelevel"               %% "scalacheck-effect"          % scalacheckEffectV     % Test,
+    "org.typelevel"               %% "scalacheck-effect-munit"    % scalacheckEffectV     % Test,
 
   ) ++ {
     if(scalaVersion.value.startsWith("3")) List.empty

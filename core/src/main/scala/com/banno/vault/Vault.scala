@@ -26,6 +26,7 @@ import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.client.{ Client, UnexpectedStatus }
+import org.http4s.implicits._
 import org.typelevel.ci.CIString
 
 import scala.concurrent.duration._
@@ -49,13 +50,17 @@ object Vault {
     } yield token
   }
 
+
   /**
-   *  https://www.vaultproject.io/api/auth/kubernetes/index.html#login
-   */
-  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Sync[F]): F[VaultToken] = {
+    * https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+    *
+    * @param mountPoint The mount point of the Kubernetes auth method.
+    * Should start with a slash.
+    */
+  def loginKubernetes[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String, mountPoint: Uri.Path = path"/auth/kubernetes")(implicit F: Sync[F]): F[VaultToken] = {
     val request = Request[F](
         method = Method.POST,
-        uri = vaultUri / "v1" / "auth" / "kubernetes" / "login"
+        uri = vaultUri.withPath(path"/v1" |+| mountPoint |+| path"/login")
       ).withEntity(
         Json.obj(
           ("role", Json.fromString(role)),
@@ -68,6 +73,13 @@ object Vault {
       token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
     } yield token
   }
+
+  /**
+   *  https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+    */
+  @deprecated("Use loginKubernetes, which parameterizes the mount point", "7.1.2")
+  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Sync[F]): F[VaultToken] =
+    loginKubernetes(client, vaultUri)(role, jwt)
 
   /**
    *  https://www.vaultproject.io/api/secret/kv/index.html#read-secret
