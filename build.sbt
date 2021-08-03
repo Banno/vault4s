@@ -85,18 +85,6 @@ lazy val core = project.in(file("core"))
       import com.typesafe.tools.mima.core.ProblemFilters.exclude
       // See https://github.com/lightbend/mima/issues/423
       Seq(
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.Base64.decodeBase64"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.Base64.encodeBase64"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.Base64.eqBase64"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.Base64.fromStringOpt"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.CipherText.decodeCipherText"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.CipherText.encodeCipherText"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.CipherText.eqCipherText"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.Context.unapply"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.DecryptRequest.unapply"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.EncryptResult.unapply"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.EncryptResult.unapply"),
-        exclude[IncompatibleSignatureProblem]("com.banno.vault.transit.PlainText.unapply")
       )
     },
     // Alas, these failed to publish
