@@ -2,7 +2,7 @@
 
 <h2 id="quick-start">Quick Start</h2>
 
-<p>To use vault4s in an existing SBT project with Scala 2.11 or a later version, add the following dependencies to your
+<p>To use vault4s in an existing SBT project with Scala 2.12 or later, add the following dependencies to your
 <code class="highlighter-rouge">build.sbt</code> depending on your needs:</p>
 
 <div class="language-scala highlighter-rouge"><pre class="highlight"><code><span class="n">libraryDependencies</span> <span class="o">++=</span> <span class="nc">Seq</span><span class="o">(</span>
@@ -10,6 +10,71 @@
 <span class="o">)</span>
 </code></pre>
 </div>
+
+<h3 id="version-matrix">Version matrix</h3>
+
+<p>vault4s practices <a href="https://semver.org/">semantic versioning</a>.  Select a major version compatible with your version of <a href="https://http4s.org/">http4s</a> and Scala:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: right">Vault4s</th>
+      <th style="text-align: right">http4s</th>
+      <th style="text-align: center">Scala 2.11</th>
+      <th style="text-align: center">Scala 2.12</th>
+      <th style="text-align: center">Scala 2.13</th>
+      <th style="text-align: center">Scala 3</th>
+      <th style="text-align: left">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: right">9.x</td>
+      <td style="text-align: right">0.23.x</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: left">Milestone</td>
+    </tr>
+    <tr>
+      <td style="text-align: right">8.x</td>
+      <td style="text-align: right">0.22.x</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: left">Milestone</td>
+    </tr>
+    <tr>
+      <td style="text-align: right">7.x</td>
+      <td style="text-align: right">0.21.x</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: left">Stable</td>
+    </tr>
+    <tr>
+      <td style="text-align: right">6.x</td>
+      <td style="text-align: right">0.21.x</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: left">EOL</td>
+    </tr>
+    <tr>
+      <td style="text-align: right">5.x</td>
+      <td style="text-align: right">0.20.x</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">✓</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: center">⛔</td>
+      <td style="text-align: left">EOL</td>
+    </tr>
+  </tbody>
+</table>
 </div></div></section></main><footer id="site-footer"><div class="container"><div class="row"><p>vault4s is designed and developed by <a href="https://github.com/banno/vault4s" target="_blank" rel="noopener noreferrer">Jack Henry &amp; Associates, Inc.®</a></p></div></div></footer><script src="/vault4s/highlight/highlight.pack.js"></script><script src="/vault4s/lunr/lunr.js"></script><script>
 // For all code blocks, copy the language from the containing div
 // to the inner code tag (where hljs expects it to be)
