@@ -19,7 +19,7 @@ def rubySetupSteps(cond: Option[String]) = Seq(
   WorkflowStep.Run(
     List(
       "gem install saas",
-      "gem install jekyll -v 3.2.1"),
+      "gem install jekyll"),
     name = Some("Install microsite dependencies"),
     cond = cond))
 
