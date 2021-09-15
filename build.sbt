@@ -2,7 +2,7 @@ val Scala213 = "2.13.6"
 val Scala3 = "3.0.2"
 
 
-ThisBuild / crossScalaVersions := Seq("2.12.14", Scala213, Scala3)
+ThisBuild / crossScalaVersions := Seq("2.12.15", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 ThisBuild / githubWorkflowArtifactUpload := false
