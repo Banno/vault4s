@@ -231,6 +231,11 @@ object Vault {
                                                 (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
     Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
+  def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
+                                                (roleId: String, jwt: String,  secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration,  loginMountPoint: Uri.Path = path"/auth/kubernetes" ): Stream[F, A] =
+    Stream.eval(loginKubernetes(client, vaultUri)(roleId, jwt, loginMountPoint)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+    
+
   /**
     * This function logs into the Vault server given by the vaultUri, to obtain a loginToken.
     *  It then also provides a Stream that continuously renews the token when it is about to finish.
