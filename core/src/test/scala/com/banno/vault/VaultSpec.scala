@@ -497,4 +497,18 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
         .assertEquals(Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration"))))
     }}
   }
+  test("loginK8sAndKeepSecretLeased fails when wait duration is longer than lease duration") {
+    PropF.forAllF(
+      VaultArbitraries.validVaultUri,
+      Arbitrary.arbitrary[FiniteDuration],
+      Arbitrary.arbitrary[FiniteDuration]
+    ) { case (uri, leaseDuration, waitInterval) => PropF.boolean[IO](leaseDuration < waitInterval) ==> {
+
+      Vault.loginK8sAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, validKubernetesJwt, "",  leaseDuration, waitInterval)
+        .attempt
+        .compile
+        .last
+        .assertEquals(Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration"))))
+    }}
+  }
 }
