@@ -6,9 +6,8 @@ ThisBuild / scalaVersion := crossScalaVersions.value.last
 val OldGuardJava = JavaSpec.temurin("8")
 val LTSJava = JavaSpec.temurin("11")
 val LatestJava = JavaSpec.temurin("17")
-val GraalVM = JavaSpec.graalvm("21.3.0", "11")
 
-ThisBuild / githubWorkflowJavaVersions := Seq(OldGuardJava, LTSJava, LatestJava, GraalVM)
+ThisBuild / githubWorkflowJavaVersions := Seq(OldGuardJava, LTSJava, LatestJava)
 
 ThisBuild / githubWorkflowArtifactUpload := false
 

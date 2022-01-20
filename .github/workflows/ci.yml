@@ -24,11 +24,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         scala: [2.12.15, 2.13.8, 3.1.0]
-        java:
-          - temurin@8
-          - temurin@11
-          - temurin@17
-          - graal_21.3.0@11
+        java: [temurin@8, temurin@11, temurin@17]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout current branch (full)
@@ -56,13 +52,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Setup GraalVM (graal_21.3.0@11)
-        if: matrix.java == 'graal_21.3.0@11'
-        uses: DeLaGuardo/setup-graalvm@5.0
-        with:
-          graalvm: 21.3.0
-          java: java11
 
       - name: Cache sbt
         uses: actions/cache@v2
@@ -132,13 +121,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Setup GraalVM (graal_21.3.0@11)
-        if: matrix.java == 'graal_21.3.0@11'
-        uses: DeLaGuardo/setup-graalvm@5.0
-        with:
-          graalvm: 21.3.0
-          java: java11
 
       - name: Cache sbt
         uses: actions/cache@v2
