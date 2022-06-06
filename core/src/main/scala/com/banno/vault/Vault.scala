@@ -44,7 +44,7 @@ object Vault {
         ).withEntity(
           Json.fromFields(
             Seq("role_id" -> Json.fromString(roleId)) ++
-              secretId.fold(Seq())(sId => Seq("secret_id" -> Json.fromString(sId)))
+              secretId.fold(Seq[(String, Json)]())(sId => Seq("secret_id" -> Json.fromString(sId)))
           )
         )
     for {
