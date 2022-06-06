@@ -37,15 +37,20 @@ object Vault {
   /**
    * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
    */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String)(implicit F: Concurrent[F]): F[VaultToken] = {
+  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String, secretId: Option[String] = None)(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
           method = Method.POST,
           uri = vaultUri / "v1" / "auth" / "approle" / "login"
-        ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
+        ).withEntity(
+          Json.fromFields(
+            Seq("role_id" -> Json.fromString(roleId)) ++
+              secretId.fold(Seq())(sId => Seq("secret_id" -> Json.fromString(sId)))
+          )
+        )
     for {
       json <- F.handleErrorWith(client.expect[Json](request)
       ) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId".some))
+        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId, secretId=$secretId".some))
       }
       token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
     } yield token
@@ -228,8 +233,8 @@ object Vault {
   }
 
   def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
-    Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+                                                (roleId: String, secretId: Option[String], secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
+    Stream.eval(login(client, vaultUri)(roleId, secretId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
   def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
                                                 (roleId: String, jwt: String,  secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration,  loginMountPoint: Uri.Path = path"/auth/kubernetes" ): Stream[F, A] =
