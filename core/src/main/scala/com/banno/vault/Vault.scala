@@ -233,8 +233,8 @@ object Vault {
   }
 
   def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretId: Option[String], secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
-    Stream.eval(login(client, vaultUri)(roleId, secretId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+                                                (roleId: String, roleSecretId: Option[String], secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
+    Stream.eval(login(client, vaultUri)(roleId, roleSecretId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
 
   def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
                                                 (roleId: String, jwt: String,  secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration,  loginMountPoint: Uri.Path = path"/auth/kubernetes" ): Stream[F, A] =
