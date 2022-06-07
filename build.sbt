@@ -85,8 +85,11 @@ lazy val core = project.in(file("core"))
     mimaBinaryIssueFilters ++= {
       import com.typesafe.tools.mima.core.IncompatibleSignatureProblem
       import com.typesafe.tools.mima.core.ProblemFilters.exclude
+      import com.typesafe.tools.mima.core.DirectMissingMethodProblem
       // See https://github.com/lightbend/mima/issues/423
       Seq(
+        exclude[DirectMissingMethodProblem]("com.banno.vault.Vault.login"),
+        exclude[DirectMissingMethodProblem]("com.banno.vault.Vault.loginAndKeepSecretLeased"),
       )
     },
   )
