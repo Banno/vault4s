@@ -37,20 +37,20 @@ object Vault {
   /**
    * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
    */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String, secretId: Option[String] = None)(implicit F: Concurrent[F]): F[VaultToken] = {
+  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String, roleSecretId: Option[String] = None)(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
           method = Method.POST,
           uri = vaultUri / "v1" / "auth" / "approle" / "login"
         ).withEntity(
           Json.fromFields(
             Seq("role_id" -> Json.fromString(roleId)) ++
-              secretId.fold(Seq[(String, Json)]())(sId => Seq("secret_id" -> Json.fromString(sId)))
+              roleSecretId.fold(Seq[(String, Json)]())(sId => Seq("secret_id" -> Json.fromString(sId)))
           )
         )
     for {
       json <- F.handleErrorWith(client.expect[Json](request)
       ) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId, secretId=$secretId".some))
+        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId, roleSecretId=$roleSecretId".some))
       }
       token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
     } yield token

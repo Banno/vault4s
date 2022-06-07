@@ -39,9 +39,9 @@ import org.typelevel.ci.CIString
 
 class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingPieces {
 
-  case class RoleIdAndSecretId(roleId: String, secretId: Option[String])
-  object RoleIdAndSecretId {
-    implicit val roleIdAndSecretIdDecoder: Decoder[RoleIdAndSecretId] = Decoder.forProduct2("role_id", "secret_id")(RoleIdAndSecretId.apply)
+  case class RoleIdAndRoleSecretId(roleId: String, roleSecretId: Option[String])
+  object RoleIdAndRoleSecretId {
+    implicit val roleIdAndSecretIdDecoder: Decoder[RoleIdAndRoleSecretId] = Decoder.forProduct2("role_id", "secret_id")(RoleIdAndRoleSecretId.apply)
   }
 
   case class RoleAndJwt(role: String, jwt: String)
@@ -91,11 +91,11 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
   val private_key_type: String = UUID.randomUUID().toString
   val serial_number: String    = UUID.randomUUID().toString
 
-  val validRoleId: String                              = UUID.randomUUID().toString
-  val validRoleIdAndSecretId: (String, Option[String]) = UUID.randomUUID().toString -> Some(UUID.randomUUID().toString)
-  val invalidJSONRoleId: String                        = UUID.randomUUID().toString
-  val roleIdWithoutToken: String                       = UUID.randomUUID().toString
-  val roleIdWithoutLease: String                       = UUID.randomUUID().toString
+  val validRoleId: String                                  = UUID.randomUUID().toString
+  val validRoleIdAndRoleSecretId: (String, Option[String]) = UUID.randomUUID().toString -> Some(UUID.randomUUID().toString)
+  val invalidJSONRoleId: String                            = UUID.randomUUID().toString
+  val roleIdWithoutToken: String                           = UUID.randomUUID().toString
+  val roleIdWithoutLease: String                           = UUID.randomUUID().toString
 
   val validKubernetesRole: String = UUID.randomUUID().toString
   val validKubernetesJwt: String = Random.alphanumeric.take(20).mkString //simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
@@ -158,8 +158,8 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
         checkVaultToken(req)( NoContent() )
 
       case req @ POST -> Root / "v1" / "auth" / "approle" / "login" =>
-        req.decodeJson[RoleIdAndSecretId].flatMap {
-          case RoleIdAndSecretId(`validRoleId`, `None`) =>
+        req.decodeJson[RoleIdAndRoleSecretId].flatMap {
+          case RoleIdAndRoleSecretId(`validRoleId`, `None`) =>
             Ok(s"""
                   |{
                   | "auth": {
@@ -168,7 +168,7 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
                   |   "renewable": $renewable
                   | }
                   |}""".stripMargin)
-          case roleIdAndSecretId if roleIdAndSecretId.roleId == validRoleIdAndSecretId._1 && roleIdAndSecretId.secretId == validRoleIdAndSecretId._2 =>
+          case roleIdAndRoleSecretId if roleIdAndRoleSecretId.roleId == validRoleIdAndRoleSecretId._1 && roleIdAndRoleSecretId.roleSecretId == validRoleIdAndRoleSecretId._2 =>
             Ok(s"""
                   |{
                   | "auth": {
@@ -177,16 +177,16 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
                   |   "renewable": $renewable
                   | }
                   |}""".stripMargin)
-          case RoleIdAndSecretId(`invalidJSONRoleId`, `None`) =>
+          case RoleIdAndRoleSecretId(`invalidJSONRoleId`, `None`) =>
             Ok(s""" NOT A JSON """)
-          case RoleIdAndSecretId(`roleIdWithoutToken`, `None`) =>
+          case RoleIdAndRoleSecretId(`roleIdWithoutToken`, `None`) =>
             Ok(s"""
                   |{
                   | "auth": {
                   |   "lease_duration": $leaseDuration
                   | }
                   |}""".stripMargin)
-          case RoleIdAndSecretId(`roleIdWithoutLease`, `None`) =>
+          case RoleIdAndRoleSecretId(`roleIdWithoutLease`, `None`) =>
             Ok(s"""
                   |{
                   | "auth": {
@@ -320,9 +320,9 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
     }
   }
 
-  test("login works as expected when sending a valid roleId and secretId") {
+  test("login works as expected when sending a valid roleId and roleSecretId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      Vault.login(mockClient, uri)(validRoleIdAndSecretId._1, validRoleIdAndSecretId._2).assertEquals(validToken)
+      Vault.login(mockClient, uri)(validRoleIdAndRoleSecretId._1, validRoleIdAndRoleSecretId._2).assertEquals(validToken)
     }
   }
 
