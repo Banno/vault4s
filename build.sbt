@@ -89,6 +89,7 @@ lazy val core = project.in(file("core"))
       // See https://github.com/lightbend/mima/issues/423
       Seq(
         exclude[DirectMissingMethodProblem]("com.banno.vault.Vault.login"),
+        exclude[DirectMissingMethodProblem]("com.banno.vault.Vault.loginAndKeep"),
         exclude[DirectMissingMethodProblem]("com.banno.vault.Vault.loginAndKeepSecretLeased"),
       )
     },

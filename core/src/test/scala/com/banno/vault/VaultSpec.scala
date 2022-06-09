@@ -91,11 +91,11 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
   val private_key_type: String = UUID.randomUUID().toString
   val serial_number: String    = UUID.randomUUID().toString
 
-  val validRoleId: String                                  = UUID.randomUUID().toString
-  val validRoleIdAndRoleSecretId: (String, Option[String]) = UUID.randomUUID().toString -> Some(UUID.randomUUID().toString)
-  val invalidJSONRoleId: String                            = UUID.randomUUID().toString
-  val roleIdWithoutToken: String                           = UUID.randomUUID().toString
-  val roleIdWithoutLease: String                           = UUID.randomUUID().toString
+  val validRoleId: String                          = UUID.randomUUID().toString
+  val validRoleIdAndRoleSecretId: (String, String) = UUID.randomUUID().toString -> UUID.randomUUID().toString
+  val invalidJSONRoleId: String                    = UUID.randomUUID().toString
+  val roleIdWithoutToken: String                   = UUID.randomUUID().toString
+  val roleIdWithoutLease: String                   = UUID.randomUUID().toString
 
   val validKubernetesRole: String = UUID.randomUUID().toString
   val validKubernetesJwt: String = Random.alphanumeric.take(20).mkString //simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
@@ -168,7 +168,7 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
                   |   "renewable": $renewable
                   | }
                   |}""".stripMargin)
-          case roleIdAndRoleSecretId if roleIdAndRoleSecretId.roleId == validRoleIdAndRoleSecretId._1 && roleIdAndRoleSecretId.roleSecretId == validRoleIdAndRoleSecretId._2 =>
+          case roleIdAndRoleSecretId if roleIdAndRoleSecretId.roleId == validRoleIdAndRoleSecretId._1 && roleIdAndRoleSecretId.roleSecretId == Some(validRoleIdAndRoleSecretId._2) =>
             Ok(s"""
                   |{
                   | "auth": {
@@ -322,7 +322,7 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
 
   test("login works as expected when sending a valid roleId and roleSecretId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      Vault.login(mockClient, uri)(validRoleIdAndRoleSecretId._1, validRoleIdAndRoleSecretId._2).assertEquals(validToken)
+      Vault.login(mockClient, uri).withRoleSecretId(validRoleIdAndRoleSecretId._2)(validRoleIdAndRoleSecretId._1).assertEquals(validToken)
     }
   }
 
@@ -504,7 +504,22 @@ class VaultSpec extends CatsEffectSuite with ScalaCheckEffectSuite with MissingP
       Arbitrary.arbitrary[FiniteDuration]
     ) { case (uri, leaseDuration, waitInterval) => PropF.boolean[IO](leaseDuration < waitInterval) ==> {
 
-      Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, None, "", leaseDuration, waitInterval)
+      Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(validRoleId, "", leaseDuration, waitInterval)
+        .attempt
+        .compile
+        .last
+        .assertEquals(Some(Left(Vault.InvalidRequirement("waitInterval longer than requested Lease Duration"))))
+    }}
+  }
+
+  test("loginAndKeepSecretLeased with roleSecretId fails when wait duration is longer than lease duration") {
+    PropF.forAllF(
+      VaultArbitraries.validVaultUri,
+      Arbitrary.arbitrary[FiniteDuration],
+      Arbitrary.arbitrary[FiniteDuration]
+    ) { case (uri, leaseDuration, waitInterval) => PropF.boolean[IO](leaseDuration < waitInterval) ==> {
+
+      Vault.loginAndKeepSecretLeased[IO, Unit](mockClient, uri).withRoleSecretId(validRoleIdAndRoleSecretId._2)(validRoleIdAndRoleSecretId._1, "", leaseDuration, waitInterval)
         .attempt
         .compile
         .last

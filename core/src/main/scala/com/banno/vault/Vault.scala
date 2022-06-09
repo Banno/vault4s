@@ -37,23 +37,8 @@ object Vault {
   /**
    * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
    */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String, roleSecretId: Option[String] = None)(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-          method = Method.POST,
-          uri = vaultUri / "v1" / "auth" / "approle" / "login"
-        ).withEntity(
-          Json.fromFields(
-            Seq("role_id" -> Json.fromString(roleId)) ++
-              roleSecretId.fold(Seq[(String, Json)]())(sId => Seq("secret_id" -> Json.fromString(sId)))
-          )
-        )
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)
-      ) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId, roleSecretId=$roleSecretId".some))
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
-    } yield token
+  def login[F[_]](client: Client[F], vaultUri: Uri): VaultLoginOperation[F] = {
+    VaultLoginOperationImpl(client, vaultUri)
   }
 
 
@@ -232,9 +217,8 @@ object Vault {
     }
   }
 
-  def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, roleSecretId: Option[String], secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
-    Stream.eval(login(client, vaultUri)(roleId, roleSecretId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+  def loginAndKeepSecretLeased[F[_], A](client: Client[F], vaultUri: Uri): VaultLoginAndKeepSecretLeasedOperation[F, A] =
+    VaultLoginAndKeepSecretLeasedOperationImpl(client, vaultUri)
 
   def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
                                                 (roleId: String, jwt: String,  secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration,  loginMountPoint: Uri.Path = path"/auth/kubernetes" ): Stream[F, A] =
@@ -274,9 +258,9 @@ object Vault {
     }
   }
 
-  def loginAndKeep[F[_]: Async](client: Client[F], vaultUri: Uri)
-                                (roleId: String, tokenLeaseExtension: FiniteDuration): Stream[F, String] =
-    Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
+  def loginAndKeep[F[_]](client: Client[F], vaultUri: Uri): VaultLoginAndKeepOperation[F] = {
+    VaultLoginAndKeepOperationImpl(client, vaultUri)
+  }
 
 
   /**
@@ -336,6 +320,61 @@ object Vault {
 
   final case class NonRenewableToken(leaseId: String) extends Throwable {
     override def getMessage(): String = s"Token lease $leaseId could not be renewed any longer"
+  }
+
+  trait VaultLoginOperation[F[_]] {
+    def withRoleSecretId(roleSecretId: String): VaultLoginOperation[F]
+    def apply(roleId: String)(implicit F: Concurrent[F]): F[VaultToken]
+  }
+
+  final case class VaultLoginOperationImpl[F[_]](client: Client[F], vaultUri: Uri, roleSecretId: Option[String] = None) extends VaultLoginOperation[F] {
+    override def withRoleSecretId(roleSecretId: String): VaultLoginOperation[F] = copy(roleSecretId = Some(roleSecretId))
+    override def apply(roleId: String)(implicit F: Concurrent[F]): F[VaultToken] = {
+      val request = Request[F](
+        method = Method.POST,
+        uri = vaultUri / "v1" / "auth" / "approle" / "login"
+      ).withEntity(
+        Json.fromFields(
+          Seq("role_id" -> Json.fromString(roleId)) ++
+            roleSecretId.fold(Seq[(String, Json)]())(sId => Seq("secret_id" -> Json.fromString(sId)))
+        )
+      )
+      for {
+        json <- F.handleErrorWith(client.expect[Json](request)
+        ) { e =>
+          F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId, roleSecretId=$roleSecretId".some))
+        }
+        token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
+      } yield token
+    }
+  }
+
+  trait VaultLoginAndKeepOperation[F[_]] {
+    def withRoleSecretId(roleSecretId: String): VaultLoginAndKeepOperation[F]
+    def apply(roleId: String, tokenLeaseExtension: FiniteDuration)(implicit A: Async[F]): Stream[F, String]
+  }
+
+  final case class VaultLoginAndKeepOperationImpl[F[_]](client: Client[F], vaultUri: Uri, roleSecretId: Option[String] = None) extends VaultLoginAndKeepOperation[F] {
+    override def withRoleSecretId(roleSecretId: String): VaultLoginAndKeepOperation[F] = copy(roleSecretId = Some(roleSecretId))
+    def apply(roleId: String, tokenLeaseExtension: FiniteDuration)(implicit A: Async[F]): Stream[F, String] = {
+      val loginOperation = login(client, vaultUri)
+      Stream.eval(roleSecretId.fold(loginOperation)(loginOperation.withRoleSecretId)(roleId))
+        .flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
+    }
+  }
+
+  trait VaultLoginAndKeepSecretLeasedOperation[F[_], A] {
+    def withRoleSecretId(roleSecretId: String): VaultLoginAndKeepSecretLeasedOperation[F, A]
+    def apply(roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F], D: Decoder[A]): Stream[F, A]
+  }
+
+  final case class VaultLoginAndKeepSecretLeasedOperationImpl[F[_], A](client: Client[F], vaultUri: Uri, roleSecretId: Option[String] = None) extends VaultLoginAndKeepSecretLeasedOperation[F, A] {
+    override def withRoleSecretId(roleSecretId: String): VaultLoginAndKeepSecretLeasedOperation[F, A] = copy(roleSecretId = Some(roleSecretId))
+    override def apply(roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration)(implicit T: Temporal[F], D: Decoder[A]): Stream[F, A] = {
+      val loginOperation = login(client, vaultUri)
+      Stream.eval(roleSecretId.fold(loginOperation)(loginOperation.withRoleSecretId)(roleId))
+        .flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+    }
   }
 
 }
