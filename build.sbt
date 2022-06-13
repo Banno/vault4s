@@ -1,6 +1,6 @@
 val Scala213 = "2.13.8"
 val Scala3 = "3.1.2"
-ThisBuild / crossScalaVersions := Seq("2.12.15", Scala213, Scala3)
+ThisBuild / crossScalaVersions := Seq("2.12.16", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 
 val OldGuardJava = JavaSpec.temurin("8")
