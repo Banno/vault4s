@@ -93,6 +93,6 @@ inThisBuild(List(
 
   organizationName := "Jack Henry & Associates, Inc.®",
   startYear := Some(2019),
-  homepage := Some(url("https://github.com/banno/vault4s"))
   licenses := Seq(License.Apache2),
+  homepage := Some(url("https://banno.github.io/vault4s"))
 ))
