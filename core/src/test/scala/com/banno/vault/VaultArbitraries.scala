@@ -34,9 +34,9 @@ trait VaultArbitraries {
 
   val certRequestGen: Gen[CertificateRequest] = for {
     commonName <- identifier
-    ipSANs     <- identifier
-    format     <- identifier
-    keyFormat  <- identifier
+    ipSANs <- identifier
+    format <- identifier
+    keyFormat <- identifier
   } yield CertificateRequest(commonName, ipSANs, format, keyFormat)
 
 }

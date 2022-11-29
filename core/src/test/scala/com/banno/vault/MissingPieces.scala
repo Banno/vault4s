@@ -28,8 +28,8 @@ trait MissingPieces {
       self.flatMap { res =>
         res.status match {
           case Proof => p.map { pRes => mergeResults(pRes.status, res, pRes) }
-          case True => p.map { mergeResults(True, res, _) }
-          case _ => res.copy(status = Undecided)
+          case True  => p.map { mergeResults(True, res, _) }
+          case _     => res.copy(status = Undecided)
         }
       }
 
@@ -39,14 +39,18 @@ trait MissingPieces {
 
   implicit class ResultExtensions[F[_]](self: PropF.Result[F]) {
     def success = self.status match {
-      case True => true
+      case True  => true
       case Proof => true
-      case _ => false
+      case _     => false
     }
     def proved = self.status == Proof
   }
 
-  private def mergeResults[F[_]: MonadThrow](st: Status, x: PropF.Result[F], y: PropF.Result[F]) =
+  private def mergeResults[F[_]: MonadThrow](
+      st: Status,
+      x: PropF.Result[F],
+      y: PropF.Result[F]
+  ) =
     PropF.Result[F](
       status = st,
       args = x.args ++ y.args,

@@ -21,24 +21,32 @@ import cats.implicits._
 import io.circe.Decoder
 
 final case class CertificateData(
-  certificate: String,
-  issuing_ca: String,
-  ca_chain: List[String],
-  private_key: String,
-  private_key_type: String,
-  serial_number: String
+    certificate: String,
+    issuing_ca: String,
+    ca_chain: List[String],
+    private_key: String,
+    private_key_type: String,
+    serial_number: String
 )
 
 object CertificateData {
   implicit val CertificateDataDecoder: Decoder[CertificateData] =
-    Decoder.forProduct6("certificate", "issuing_ca", "ca_chain", "private_key", "private_key_type", "serial_number")(CertificateData.apply)
+    Decoder.forProduct6(
+      "certificate",
+      "issuing_ca",
+      "ca_chain",
+      "private_key",
+      "private_key_type",
+      "serial_number"
+    )(CertificateData.apply)
 
-  implicit def CertificateDataEq: Eq[CertificateData] = Eq.instance[CertificateData]((cd1, cd2) =>
-    cd1.certificate === cd2.certificate &&
-      cd1.issuing_ca === cd2.issuing_ca &&
-      cd1.ca_chain === cd2.ca_chain &&
-      cd1.private_key === cd2.private_key &&
-      cd1.private_key_type === cd2.private_key_type &&
-      cd1.serial_number === cd2.serial_number
-  )
+  implicit def CertificateDataEq: Eq[CertificateData] =
+    Eq.instance[CertificateData]((cd1, cd2) =>
+      cd1.certificate === cd2.certificate &&
+        cd1.issuing_ca === cd2.issuing_ca &&
+        cd1.ca_chain === cd2.ca_chain &&
+        cd1.private_key === cd2.private_key &&
+        cd1.private_key_type === cd2.private_key_type &&
+        cd1.serial_number === cd2.serial_number
+    )
 }

@@ -30,6 +30,6 @@ object VaultKeys {
       )(VaultKeys.apply)
     }
 
-  implicit val VaultKeysEq : Eq[VaultKeys] = Eq.fromUniversalEquals[VaultKeys]
+  implicit val VaultKeysEq: Eq[VaultKeys] = Eq.fromUniversalEquals[VaultKeys]
 
-} 
+}

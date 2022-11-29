@@ -19,17 +19,34 @@ package com.banno.vault.models
 import io.circe.Encoder
 
 final case class CertificateRequest(
-  common_name: String,
-  alt_names: String = "",
-  ip_sans: String = "",
-  ttl: String = "",
-  format: String = "",
-  private_key_format: String = "",
-  exclude_cn_from_sans: Boolean = false
+    common_name: String,
+    alt_names: String = "",
+    ip_sans: String = "",
+    ttl: String = "",
+    format: String = "",
+    private_key_format: String = "",
+    exclude_cn_from_sans: Boolean = false
 )
 
 object CertificateRequest {
   implicit val certificateRequestEncoder: Encoder[CertificateRequest] =
-    Encoder.forProduct7("common_name", "alt_names", "ip_sans", "ttl", "format", "private_key_format", "exclude_cn_from_sans")(cr =>
-      (cr.common_name, cr.alt_names, cr.ip_sans, cr.ttl, cr.format, cr.private_key_format, cr.exclude_cn_from_sans))
+    Encoder.forProduct7(
+      "common_name",
+      "alt_names",
+      "ip_sans",
+      "ttl",
+      "format",
+      "private_key_format",
+      "exclude_cn_from_sans"
+    )(cr =>
+      (
+        cr.common_name,
+        cr.alt_names,
+        cr.ip_sans,
+        cr.ttl,
+        cr.format,
+        cr.private_key_format,
+        cr.exclude_cn_from_sans
+      )
+    )
 }

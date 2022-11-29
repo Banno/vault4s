@@ -20,12 +20,14 @@ val scalacheckEffectV = "1.0.4"
 val kindProjectorV = "0.13.2"
 val betterMonadicForV = "0.3.1"
 
-lazy val `vault4s` = project.in(file("."))
+lazy val `vault4s` = project
+  .in(file("."))
   .settings(publish / skip := true)
   .disablePlugins(MimaPlugin)
   .aggregate(core)
 
-lazy val core = project.in(file("core"))
+lazy val core = project
+  .in(file("core"))
   .settings(commonSettings)
   .settings(
     name := "vault4s",
@@ -35,24 +37,23 @@ lazy val core = project.in(file("core"))
       // See https://github.com/lightbend/mima/issues/423
       Seq(
       )
-    },
+    }
   )
 
-lazy val docs = project.in(file("docs"))
+lazy val docs = project
+  .in(file("docs"))
   .settings(publish / skip := true)
   .enablePlugins(TypelevelSitePlugin)
   .enablePlugins(TypelevelUnidocPlugin)
   .dependsOn(core)
-  .settings{
+  .settings {
     Seq(
       mdocIn := baseDirectory.value / "docs",
       tlSiteHelium := {
-        GenericSiteSettings.defaults.value
-          .site
+        GenericSiteSettings.defaults.value.site
           .topNavigationBar(
-            homeLink = IconLink.external(
-              "https://banno.github.io/vault4s",
-              HeliumIcon.home),
+            homeLink = IconLink
+              .external("https://banno.github.io/vault4s", HeliumIcon.home)
           )
       }
     )
@@ -62,37 +63,36 @@ lazy val docs = project.in(file("docs"))
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
   libraryDependencies ++= Seq(
-    "org.http4s"                  %% "http4s-client"              % http4sV,
-    "org.http4s"                  %% "http4s-circe"               % http4sV,
-
-    "org.http4s"                  %% "http4s-dsl"                 % http4sV               % Test,
-    "org.typelevel"               %% "munit-cats-effect-3"        % munitCatsEffectV      % Test,
-    "org.scalameta"               %% "munit-scalacheck"           % munitScalaCheckV      % Test,
-    "org.typelevel"               %% "scalacheck-effect-munit"    % scalacheckEffectV     % Test,
-
+    "org.http4s" %% "http4s-client" % http4sV,
+    "org.http4s" %% "http4s-circe" % http4sV,
+    "org.http4s" %% "http4s-dsl" % http4sV % Test,
+    "org.typelevel" %% "munit-cats-effect-3" % munitCatsEffectV % Test,
+    "org.scalameta" %% "munit-scalacheck" % munitScalaCheckV % Test,
+    "org.typelevel" %% "scalacheck-effect-munit" % scalacheckEffectV % Test
   )
 )
 
 lazy val contributors = Seq(
-  "ChristopherDavenport"  -> "Christopher Davenport",
-  "kevinmeredith"         -> "Kevin Meredith",
-  "diesalbla"             -> "Diego E. Alonso Blas",
-  "tyler-clark"           -> "Tyler Clark",
-  "fedefernandez"         -> "Fede Fernández",
-  "zcox"                  -> "Zach Cox",
-  "JesusMtnez"            -> "Jesús Martínez",
-  "peterneyens"           -> "Peter Neyens",
-  "calvinbrown085"        -> "Calvin Brown",
-  "juanpedromoreno"       -> "Juan Pedro Moreno",
-  "zmccoy"                -> "Zach McCoy"
+  "ChristopherDavenport" -> "Christopher Davenport",
+  "kevinmeredith" -> "Kevin Meredith",
+  "diesalbla" -> "Diego E. Alonso Blas",
+  "tyler-clark" -> "Tyler Clark",
+  "fedefernandez" -> "Fede Fernández",
+  "zcox" -> "Zach Cox",
+  "JesusMtnez" -> "Jesús Martínez",
+  "peterneyens" -> "Peter Neyens",
+  "calvinbrown085" -> "Calvin Brown",
+  "juanpedromoreno" -> "Juan Pedro Moreno",
+  "zmccoy" -> "Zach McCoy"
 )
 
-inThisBuild(List(
-  organization := "com.banno",
-  developers := contributors.map((tlGitHubDev _).tupled).toList,
-
-  organizationName := "Jack Henry & Associates, Inc.®",
-  startYear := Some(2019),
-  licenses := Seq(License.Apache2),
-  homepage := Some(url("https://banno.github.io/vault4s"))
-))
+inThisBuild(
+  List(
+    organization := "com.banno",
+    developers := contributors.map((tlGitHubDev _).tupled).toList,
+    organizationName := "Jack Henry & Associates, Inc.®",
+    startYear := Some(2019),
+    licenses := Seq(License.Apache2),
+    homepage := Some(url("https://banno.github.io/vault4s"))
+  )
+)

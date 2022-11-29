@@ -20,7 +20,11 @@ import io.circe.Decoder
 import cats.Eq
 import cats.implicits._
 
-final case class VaultToken(clientToken: String, leaseDuration: Long, renewable: Boolean)
+final case class VaultToken(
+    clientToken: String,
+    leaseDuration: Long,
+    renewable: Boolean
+)
 
 object VaultToken {
 
@@ -33,10 +37,11 @@ object VaultToken {
       )(VaultToken.apply)
     }
 
-  implicit val vaultTokenEq : Eq[VaultToken] = Eq.instance[VaultToken]((vt1, vt2) =>
-    vt1.clientToken === vt2.clientToken &&
-      vt1.leaseDuration === vt2.leaseDuration &&
-      (vt1.renewable === vt2.renewable)
-  )
+  implicit val vaultTokenEq: Eq[VaultToken] =
+    Eq.instance[VaultToken]((vt1, vt2) =>
+      vt1.clientToken === vt2.clientToken &&
+        vt1.leaseDuration === vt2.leaseDuration &&
+        (vt1.renewable === vt2.renewable)
+    )
 
 }

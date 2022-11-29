@@ -18,7 +18,8 @@ package com.banno.vault.models
 
 import org.http4s.Request
 
-final case class VaultRequestError(message: String, cause: Option[Throwable]) extends RuntimeException(message) {
+final case class VaultRequestError(message: String, cause: Option[Throwable])
+    extends RuntimeException(message) {
   cause foreach initCause
 
   override def toString: String = getMessage
@@ -26,14 +27,22 @@ final case class VaultRequestError(message: String, cause: Option[Throwable]) ex
 
 object VaultRequestError {
 
-  def apply[F[_]](request: Request[F], cause: Option[Throwable], extra: Option[String]): VaultRequestError =
+  def apply[F[_]](
+      request: Request[F],
+      cause: Option[Throwable],
+      extra: Option[String]
+  ): VaultRequestError =
     VaultRequestError(requestMessage(request, cause, extra), cause)
 
-  def requestMessage[F[_]](request: Request[F], cause: Option[Throwable], extra: Option[String]): String = {
+  def requestMessage[F[_]](
+      request: Request[F],
+      cause: Option[Throwable],
+      extra: Option[String]
+  ): String = {
     val extraString = extra.map(e => s", $e").getOrElse("")
     val requestString: String =
       s"""Error on request: Request(method=${request.method}, uri=${request.uri
-        .toString()}$extraString)"""
+          .toString()}$extraString)"""
     s"$requestString ${cause map (c => s"\nCause: ${c.getMessage}") getOrElse ""}"
   }
 
