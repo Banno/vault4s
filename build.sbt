@@ -41,6 +41,7 @@ lazy val core = project.in(file("core"))
 lazy val docs = project.in(file("docs"))
   .settings(publish / skip := true)
   .enablePlugins(TypelevelSitePlugin)
+  .enablePlugins(TypelevelUnidocPlugin)
   .dependsOn(core)
   .settings{
     Seq(
@@ -51,7 +52,8 @@ lazy val docs = project.in(file("docs"))
           .topNavigationBar(
             homeLink = IconLink.external(
               "https://banno.github.io/vault4s",
-              HeliumIcon.home))
+              HeliumIcon.home),
+          )
       }
     )
   }
