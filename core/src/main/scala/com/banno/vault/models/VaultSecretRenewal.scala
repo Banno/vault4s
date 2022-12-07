@@ -20,7 +20,11 @@ import cats.Eq
 import cats.implicits._
 import io.circe.Decoder
 
-final case class VaultSecretRenewal(leaseDuration: Long, leaseId: String, renewable: Boolean)
+final case class VaultSecretRenewal(
+    leaseDuration: Long,
+    leaseId: String,
+    renewable: Boolean
+)
 object VaultSecretRenewal {
 
   implicit val VaultSecretRenewalDecoder: Decoder[VaultSecretRenewal] =
@@ -32,11 +36,12 @@ object VaultSecretRenewal {
       )(VaultSecretRenewal.apply)
     }
 
-  implicit val VaultSecretRenewalEq : Eq[VaultSecretRenewal] = Eq.instance[VaultSecretRenewal]((vt1, vt2) =>
+  implicit val VaultSecretRenewalEq: Eq[VaultSecretRenewal] =
+    Eq.instance[VaultSecretRenewal]((vt1, vt2) =>
       vt1.leaseDuration === vt2.leaseDuration &&
-      vt1.leaseId === vt2.leaseId &&
-      vt1.renewable === vt2.renewable
-  )
+        vt1.leaseId === vt2.leaseId &&
+        vt1.renewable === vt2.renewable
+    )
 
 }
 

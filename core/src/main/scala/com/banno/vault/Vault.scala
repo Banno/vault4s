@@ -20,7 +20,15 @@ import fs2.Stream
 import cats._
 import cats.effect._
 import cats.syntax.all._
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultRequestError, VaultSecret, VaultSecretRenewal, VaultToken, VaultKeys}
+import com.banno.vault.models.{
+  CertificateData,
+  CertificateRequest,
+  VaultRequestError,
+  VaultSecret,
+  VaultSecretRenewal,
+  VaultToken,
+  VaultKeys
+}
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.circe.syntax._
 import org.http4s._
@@ -29,223 +37,375 @@ import org.http4s.client._
 import org.http4s.implicits._
 import org.typelevel.ci.CIString
 
-
 import scala.concurrent.duration._
 
 object Vault {
 
-  /**
-   * https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
-   */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(roleId: String)(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-          method = Method.POST,
-          uri = vaultUri / "v1" / "auth" / "approle" / "login"
-        ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)
-      ) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId".some))
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
-    } yield token
-  }
-
-
-  /**
-    * https://www.vaultproject.io/api/auth/kubernetes/index.html#login
-    *
-    * @param mountPoint The mount point of the Kubernetes auth method.
-    * Should start with a slash.
+  /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
     */
-  def loginKubernetes[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String, mountPoint: Uri.Path = path"/auth/kubernetes")(implicit F: Concurrent[F]): F[VaultToken] = {
+  def login[F[_]](client: Client[F], vaultUri: Uri)(
+      roleId: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
-        method = Method.POST,
-        uri = vaultUri.withPath(path"/v1" |+| mountPoint |+| path"/login")
-      ).withEntity(
-        Json.obj(
-          ("role", Json.fromString(role)),
-          ("jwt", Json.fromString(jwt))
-        ))
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "approle" / "login"
+    ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
     for {
       json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"role=$role".some)) //don't expose jwt in error
+        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId".some))
       }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
     } yield token
   }
 
-  /**
-   *  https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+  /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+    *
+    * @param mountPoint
+    *   The mount point of the Kubernetes auth method. Should start with a
+    *   slash.
     */
-  @deprecated("Use loginKubernetes, which parameterizes the mount point", "7.1.2")
-  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(role: String, jwt: String)(implicit F: Concurrent[F]): F[VaultToken] =
+  def loginKubernetes[F[_]](client: Client[F], vaultUri: Uri)(
+      role: String,
+      jwt: String,
+      mountPoint: Uri.Path = path"/auth/kubernetes"
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri.withPath(path"/v1" |+| mountPoint |+| path"/login")
+    ).withEntity(
+      Json.obj(
+        ("role", Json.fromString(role)),
+        ("jwt", Json.fromString(jwt))
+      )
+    )
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(
+          VaultRequestError(request, e.some, s"role=$role".some)
+        ) // don't expose jwt in error
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
+  /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+    */
+  @deprecated(
+    "Use loginKubernetes, which parameterizes the mount point",
+    "7.1.2"
+  )
+  def kubernetesLogin[F[_]](client: Client[F], vaultUri: Uri)(
+      role: String,
+      jwt: String
+  )(implicit F: Concurrent[F]): F[VaultToken] =
     loginKubernetes(client, vaultUri)(role, jwt)
 
-  /**
-   *  https://www.vaultproject.io/api/secret/kv/index.html#read-secret
-   */
-  def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] = {
-    val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+  /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
+    */
+  def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(
+      token: String,
+      secretPath: String
+  )(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] = {
+    val newSecretPath =
+      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
     val request = Request[F](
       method = Method.GET,
       uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
-    F.adaptError(client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])) {
-      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
-        InvalidMessageBodyFailure("Could not decode secret key value", cause.some)
+    F.adaptError(
+      client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])
+    ) { case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+      InvalidMessageBodyFailure("Could not decode secret key value", cause.some)
     }.handleErrorWith { e =>
-      F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
-    }
-  }
-
- /**
-   *  https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET alternative https://www.vaultproject.io/api-docs#api-operations vs LIST
-   */
-  def listSecrets[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String)(implicit F: Concurrent[F]): F[VaultKeys] = {
-    val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request = Request[F](
-        method = Method.GET,
-        uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")).withQueryParam("list", "true"),
-        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
-      )
-    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
-      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
-        InvalidMessageBodyFailure("Could not decode vault list secrets response", cause.some)
-      case e => VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some)
-    }
-  }
-
-  /**
-   *  https://www.vaultproject.io/api/system/leases.html#renew-lease
-   */
-  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(leaseId: String, newLeaseDuration: FiniteDuration, token: String)(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
-    val request = Request[F](
-        method = Method.PUT,
-        uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/renew")),
-        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
-      ).withEntity(
-        Json.obj(
-          ("lease_id", Json.fromString(leaseId)),
-          ("increment", Json.fromLong(newLeaseDuration.toSeconds))
+      F.raiseError(
+        VaultRequestError(
+          request = request,
+          cause = e.some,
+          extra = s"tokenLength=${token.length}".some
         )
       )
+    }
+  }
+
+  /** https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET
+    * alternative https://www.vaultproject.io/api-docs#api-operations vs LIST
+    */
+  def listSecrets[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String,
+      secretPath: String
+  )(implicit F: Concurrent[F]): F[VaultKeys] = {
+    val newSecretPath =
+      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
+      method = Method.GET,
+      uri = vaultUri
+        .withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath"))
+        .withQueryParam("list", "true"),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+    )
+    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
+      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+        InvalidMessageBodyFailure(
+          "Could not decode vault list secrets response",
+          cause.some
+        )
+      case e =>
+        VaultRequestError(
+          request = request,
+          cause = e.some,
+          extra = s"tokenLength=${token.length}".some
+        )
+    }
+  }
+
+  /** https://www.vaultproject.io/api/system/leases.html#renew-lease
+    */
+  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(
+      leaseId: String,
+      newLeaseDuration: FiniteDuration,
+      token: String
+  )(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
+    val request = Request[F](
+      method = Method.PUT,
+      uri =
+        vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/renew")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+    ).withEntity(
+      Json.obj(
+        ("lease_id", Json.fromString(leaseId)),
+        ("increment", Json.fromLong(newLeaseDuration.toSeconds))
+      )
+    )
     for {
-      renewal <- F.handleErrorWith(client.expect[VaultSecretRenewal](request)(jsonOf[F, VaultSecretRenewal])) { e =>
-        F.raiseError(VaultRequestError(request = request, cause = e.some, extra = s"tokenLength=${token.length}".some))
+      renewal <- F.handleErrorWith(
+        client.expect[VaultSecretRenewal](request)(
+          jsonOf[F, VaultSecretRenewal]
+        )
+      ) { e =>
+        F.raiseError(
+          VaultRequestError(
+            request = request,
+            cause = e.some,
+            extra = s"tokenLength=${token.length}".some
+          )
+        )
       }
     } yield renewal
   }
 
-  /**
-   *  https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
-   */
-  def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken, newLeaseDuration: FiniteDuration)(implicit F: Concurrent[F]): F[VaultToken] = {
+  /** https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
+    */
+  def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
+      token: VaultToken,
+      newLeaseDuration: FiniteDuration
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
     val request = Request[F](
-        method = Method.POST,
-        uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-      ).withEntity(
-        Json.obj(
-          ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
-        )
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
+      headers =
+        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+    ).withEntity(
+      Json.obj(
+        ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
       )
+    )
     for {
       json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${token.clientToken.length}".some))
+        F.raiseError(
+          VaultRequestError(
+            request,
+            e.some,
+            s"tokenLength=${token.clientToken.length}".some
+          )
+        )
       }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(decoderError)
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
     } yield token
   }
 
-  /**
-   *  https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
-   */
-  def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(token: VaultToken)(implicit F: Concurrent[F]): F[Unit] = {
+  /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
+    */
+  def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
+      token: VaultToken
+  )(implicit F: Concurrent[F]): F[Unit] = {
     val request = Request[F](
-        method = Method.POST,
-        uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
-        headers = Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-      )
-    val resp = client.status(request).ensureOr(UnexpectedStatus(_, request.method, request.uri ))(_.isSuccess) .void
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
+      headers =
+        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+    )
+    val resp = client
+      .status(request)
+      .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
+      .void
     F.handleErrorWith(resp) { e =>
-      F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${token.clientToken.length}".some))
+      F.raiseError(
+        VaultRequestError(
+          request,
+          e.some,
+          s"tokenLength=${token.clientToken.length}".some
+        )
+      )
     }
   }
 
-  /**
-   *  https://www.vaultproject.io/api/system/leases.html#revoke-lease
-   */
-  def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(clientToken: String, leaseId: String)(implicit F: Concurrent[F]): F[Unit] = {
+  /** https://www.vaultproject.io/api/system/leases.html#revoke-lease
+    */
+  def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(
+      clientToken: String,
+      leaseId: String
+  )(implicit F: Concurrent[F]): F[Unit] = {
     val request = Request[F](
-        method = Method.PUT,
-        uri = vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/revoke")),
-        headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
-      ).withEntity( Json.obj( "lease_id" -> Json.fromString(leaseId) ) )
+      method = Method.PUT,
+      uri =
+        vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/revoke")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
+    ).withEntity(Json.obj("lease_id" -> Json.fromString(leaseId)))
     for {
-      _ <- client.status(request)
-        .ensureOr(UnexpectedStatus(_, request.method, request.uri) )(_.isSuccess)
+      _ <- client
+        .status(request)
+        .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
         .handleErrorWith { e =>
-          F.raiseError(VaultRequestError(request, e.some, s"tokenLength=${clientToken.length}".some))
+          F.raiseError(
+            VaultRequestError(
+              request,
+              e.some,
+              s"tokenLength=${clientToken.length}".some
+            )
+          )
         }
     } yield ()
   }
 
-  /**
-   *  https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
-   */
-  def generateCertificate[F[_]](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: CertificateRequest)(implicit F: Concurrent[F]): F[VaultSecret[CertificateData]] =
+  /** https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
+    */
+  def generateCertificate[F[_]](
+      client: Client[F],
+      vaultUri: Uri
+  )(token: String, secretPath: String, payload: CertificateRequest)(implicit
+      F: Concurrent[F]
+  ): F[VaultSecret[CertificateData]] =
     generateSecret(client, vaultUri)(token, secretPath, payload)
 
-  def generateSecret[F[_], A: Encoder, B: Decoder](client: Client[F], vaultUri: Uri)(token: String, secretPath: String, payload: A)(implicit F: Concurrent[F]): F[VaultSecret[B]] = {
-    val newSecretPath = if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request =  Request[F](
+  def generateSecret[F[_], A: Encoder, B: Decoder](
+      client: Client[F],
+      vaultUri: Uri
+  )(token: String, secretPath: String, payload: A)(implicit
+      F: Concurrent[F]
+  ): F[VaultSecret[B]] = {
+    val newSecretPath =
+      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
       method = Method.POST,
       uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     val withBody = request.withEntity(payload.asJson)
     for {
-      secret   <- F.handleErrorWith(client.expect[VaultSecret[B]](withBody)(jsonOf[F, VaultSecret[B]])) { e =>
-        F.raiseError(VaultRequestError(request = withBody, cause = e.some, extra = s"tokenLength=${token.length}".some))
+      secret <- F.handleErrorWith(
+        client.expect[VaultSecret[B]](withBody)(jsonOf[F, VaultSecret[B]])
+      ) { e =>
+        F.raiseError(
+          VaultRequestError(
+            request = withBody,
+            cause = e.some,
+            extra = s"tokenLength=${token.length}".some
+          )
+        )
       }
     } yield secret
   }
 
-  /**
-    * This function logs in, requests a secret and then continually asks for a duration extension of the lease after
-    * each waitInterval
+  /** This function logs in, requests a secret and then continually asks for a
+    * duration extension of the lease after each waitInterval
     */
-  def keepLoginAndSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (token: VaultToken, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] = {
-    Alternative[Option].guard(duration > waitInterval).fold(
-      Stream.raiseError[F](InvalidRequirement("waitInterval longer than requested Lease Duration"))
-    )(_ => Stream.empty[F]) ++
-    keepLoginRenewed[F](client, vaultUri)(token, duration).flatMap { clientToken =>
-      readSecretAndRetain[F, A](client, vaultUri, clientToken)(secretPath, waitInterval)
-    }
+  def keepLoginAndSecretLeased[F[_]: Temporal, A: Decoder](
+      client: Client[F],
+      vaultUri: Uri
+  )(
+      token: VaultToken,
+      secretPath: String,
+      duration: FiniteDuration,
+      waitInterval: FiniteDuration
+  ): Stream[F, A] = {
+    Alternative[Option]
+      .guard(duration > waitInterval)
+      .fold(
+        Stream.raiseError[F](
+          InvalidRequirement(
+            "waitInterval longer than requested Lease Duration"
+          )
+        )
+      )(_ => Stream.empty[F]) ++
+      keepLoginRenewed[F](client, vaultUri)(token, duration).flatMap {
+        clientToken =>
+          readSecretAndRetain[F, A](client, vaultUri, clientToken)(
+            secretPath,
+            waitInterval
+          )
+      }
   }
 
-  def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration): Stream[F, A] =
-    Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
+  def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
+      client: Client[F],
+      vaultUri: Uri
+  )(
+      roleId: String,
+      secretPath: String,
+      duration: FiniteDuration,
+      waitInterval: FiniteDuration
+  ): Stream[F, A] =
+    Stream
+      .eval(login(client, vaultUri)(roleId))
+      .flatMap(token =>
+        keepLoginAndSecretLeased[F, A](client, vaultUri)(
+          token,
+          secretPath,
+          duration,
+          waitInterval
+        )
+      )
 
-  def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](client: Client[F], vaultUri: Uri)
-                                                (roleId: String, jwt: String,  secretPath: String, duration: FiniteDuration, waitInterval: FiniteDuration,  loginMountPoint: Uri.Path = path"/auth/kubernetes" ): Stream[F, A] =
-    Stream.eval(loginKubernetes(client, vaultUri)(roleId, jwt, loginMountPoint)).flatMap(token => keepLoginAndSecretLeased[F, A](client, vaultUri)(token, secretPath, duration, waitInterval))
-    
+  def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
+      client: Client[F],
+      vaultUri: Uri
+  )(
+      roleId: String,
+      jwt: String,
+      secretPath: String,
+      duration: FiniteDuration,
+      waitInterval: FiniteDuration,
+      loginMountPoint: Uri.Path = path"/auth/kubernetes"
+  ): Stream[F, A] =
+    Stream
+      .eval(loginKubernetes(client, vaultUri)(roleId, jwt, loginMountPoint))
+      .flatMap(token =>
+        keepLoginAndSecretLeased[F, A](client, vaultUri)(
+          token,
+          secretPath,
+          duration,
+          waitInterval
+        )
+      )
 
-  /**
-    * This function logs into the Vault server given by the vaultUri, to obtain a loginToken.
-    *  It then also provides a Stream that continuously renews the token when it is about to finish.
-    *  - keeps the token constantly renewed
-    *  - Upon termination of the Stream (from the using application) revokes the token.
-    *    However, any error on revoking the token is ignored.
+  /** This function logs into the Vault server given by the vaultUri, to obtain
+    * a loginToken. It then also provides a Stream that continuously renews the
+    * token when it is about to finish.
+    *   - keeps the token constantly renewed
+    *   - Upon termination of the Stream (from the using application) revokes
+    *     the token. However, any error on revoking the token is ignored.
     */
-  def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)
-                                (token: VaultToken, tokenLeaseExtension: FiniteDuration)
-                                (implicit T: Temporal[F]): Stream[F, String] = {
+  def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)(
+      token: VaultToken,
+      tokenLeaseExtension: FiniteDuration
+  )(implicit T: Temporal[F]): Stream[F, String] = {
 
     def renewOnDuration(token: VaultToken): F[VaultToken] = {
       val waitInterval: Long =
@@ -259,35 +419,52 @@ object Vault {
         .iterateEval(token)(renewOnDuration)
         .takeThrough(_.renewable)
         .last
-        .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
+        .flatMap(lastRenewal =>
+          Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)
+        ) ++
         Stream.raiseError[F](NonRenewableToken(token.clientToken))
 
-    def cleanup(token: VaultToken): F[Unit] = revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
+    def cleanup(token: VaultToken): F[Unit] =
+      revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
 
     Stream.bracket(token.pure[F])(cleanup).flatMap { token =>
       Stream.emit(token.clientToken).concurrently(keep(token))
     }
   }
 
-  def loginAndKeep[F[_]: Async](client: Client[F], vaultUri: Uri)
-                                (roleId: String, tokenLeaseExtension: FiniteDuration): Stream[F, String] =
-    Stream.eval(login(client, vaultUri)(roleId)).flatMap(token => keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension))
+  def loginAndKeep[F[_]: Async](
+      client: Client[F],
+      vaultUri: Uri
+  )(roleId: String, tokenLeaseExtension: FiniteDuration): Stream[F, String] =
+    Stream
+      .eval(login(client, vaultUri)(roleId))
+      .flatMap(token =>
+        keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension)
+      )
 
-
-  /**
-    * This function uses the given Vault client, uri, and authenticated token to obtain a secret from Vault.
-    *  It then also provides a Stream that continuously renews the lease on that secret, when it is about to finish.
-    *  Upon termination of the Stream (from the using application) revokes the token (but any error on revokation is ignored).
+  /** This function uses the given Vault client, uri, and authenticated token to
+    * obtain a secret from Vault. It then also provides a Stream that
+    * continuously renews the lease on that secret, when it is about to finish.
+    * Upon termination of the Stream (from the using application) revokes the
+    * token (but any error on revokation is ignored).
     */
-  def readSecretAndRetain[F[_], A: Decoder](client: Client[F], vaultUri: Uri, clientToken: String)
-                                                   (secretPath: String, leaseExtension: FiniteDuration)
-                                                   (implicit T: Temporal[F]): Stream[F, A] = {
+  def readSecretAndRetain[F[_], A: Decoder](
+      client: Client[F],
+      vaultUri: Uri,
+      clientToken: String
+  )(secretPath: String, leaseExtension: FiniteDuration)(implicit
+      T: Temporal[F]
+  ): Stream[F, A] = {
 
     def renewOnDuration(renewal: VaultSecretRenewal): F[VaultSecretRenewal] = {
       val waitInterval: Long =
         Math.min(renewal.leaseDuration, leaseExtension.toSeconds) * 9 / 10
       T.sleep(waitInterval.seconds) *>
-        Vault.renewLease(client, vaultUri)(renewal.leaseId, leaseExtension, clientToken)
+        Vault.renewLease(client, vaultUri)(
+          renewal.leaseId,
+          leaseExtension,
+          clientToken
+        )
     }
 
     def keep(secret: VaultSecret[A]): Stream[F, Unit] =
@@ -296,7 +473,9 @@ object Vault {
           .iterateEval(initRenewal)(renewOnDuration)
           .takeThrough(_.renewable)
           .last
-          .flatMap(lastRenewal => Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)) ++
+          .flatMap(lastRenewal =>
+            Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)
+          ) ++
           Stream.raiseError[F](NonRenewableSecret(initRenewal.leaseId))
       )
 
@@ -305,10 +484,11 @@ object Vault {
     def cleanup(secret: VaultSecret[A]): F[Unit] =
       secret.renewal.fold[F[Unit]](
         Applicative[F].unit
-      ){renewal =>
-        Vault.revokeLease[F](client, vaultUri)(clientToken, renewal.leaseId).handleError(_ => ())
+      ) { renewal =>
+        Vault
+          .revokeLease[F](client, vaultUri)(clientToken, renewal.leaseId)
+          .handleError(_ => ())
       }
-
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
       Stream.emit(secret.data).concurrently(keep(secret))
@@ -316,9 +496,14 @@ object Vault {
   }
 
   private[this] val decoderError: DecodingFailure => DecodeFailure =
-    failure => InvalidMessageBodyFailure(s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}")
+    failure =>
+      InvalidMessageBodyFailure(
+        s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}"
+      )
 
-  private[this] def raiseKnownError[F[_], E1, E2 <: Throwable, A](e: Either[E1, A])(errorF: E1 => E2)(implicit F: Concurrent[F]): F[A] =
+  private[this] def raiseKnownError[F[_], E1, E2 <: Throwable, A](
+      e: Either[E1, A]
+  )(errorF: E1 => E2)(implicit F: Concurrent[F]): F[A] =
     F.fromEither(e.leftMap(errorF))
 
   final case class InvalidRequirement(message: String) extends Throwable {
@@ -326,11 +511,13 @@ object Vault {
   }
 
   final case class NonRenewableSecret(leaseId: String) extends Throwable {
-    override def getMessage(): String = s"Secret lease $leaseId could not be renewed any longer"
+    override def getMessage(): String =
+      s"Secret lease $leaseId could not be renewed any longer"
   }
 
   final case class NonRenewableToken(leaseId: String) extends Throwable {
-    override def getMessage(): String = s"Token lease $leaseId could not be renewed any longer"
+    override def getMessage(): String =
+      s"Token lease $leaseId could not be renewed any longer"
   }
 
 }

@@ -24,10 +24,18 @@ final case class VaultSecret[A](data: A, renewal: Option[VaultSecretRenewal])
 
 object VaultSecret {
 
-  def apply[A](data: A, leaseDuration: Option[Long], leaseId: Option[String], renewable: Option[Boolean]): VaultSecret[A] =
-    VaultSecret[A](data, (leaseDuration, leaseId, renewable).mapN(VaultSecretRenewal.apply))
+  def apply[A](
+      data: A,
+      leaseDuration: Option[Long],
+      leaseId: Option[String],
+      renewable: Option[Boolean]
+  ): VaultSecret[A] =
+    VaultSecret[A](
+      data,
+      (leaseDuration, leaseId, renewable).mapN(VaultSecretRenewal.apply)
+    )
 
-  implicit def VaultSecretDecoder[A : Decoder]: Decoder[VaultSecret[A]] =
+  implicit def VaultSecretDecoder[A: Decoder]: Decoder[VaultSecret[A]] =
     Decoder.instance[VaultSecret[A]] { c =>
       Decoder.resultInstance.map4(
         c.downField("data").as[A],
@@ -37,11 +45,12 @@ object VaultSecret {
       )(VaultSecret[A])
     }
 
-  implicit def VaultSecretEq[A : Eq] : Eq[VaultSecret[A]] = Eq.instance[VaultSecret[A]]((vt1, vt2) =>
-    vt1.data === vt2.data &&
-      vt1.renewal === vt2.renewal
-  )
-  
+  implicit def VaultSecretEq[A: Eq]: Eq[VaultSecret[A]] =
+    Eq.instance[VaultSecret[A]]((vt1, vt2) =>
+      vt1.data === vt2.data &&
+        vt1.renewal === vt2.renewal
+    )
+
 }
 
 // https://www.vaultproject.io/api/secret/kv/index.html#sample-response
