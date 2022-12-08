@@ -1,9 +1,4 @@
----
-layout: home
-
----
-
-# vault4s - Vault Client Library For Scala [![Build Status](https://travis-ci.com/banno/vault4s.svg?branch=master)](https://travis-ci.com/banno/vault4s) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.banno/vault4s_2.12/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.banno/vault4s_2.12)
+# vault4s - Vault Client Library For Scala [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.banno/vault4s_2.12/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.banno/vault4s_2.12)
 
 ## Quick Start
 
@@ -12,7 +7,7 @@ To use vault4s in an existing SBT project with Scala 2.12 or later, add the foll
 
 ```scala
 libraryDependencies ++= Seq(
-  "com.banno" %% "vault4s" % "<version>"
+  "com.banno" %% "vault4s" % "@VERSION@"
 )
 ```
 
@@ -22,8 +17,8 @@ vault4s practices [semantic versioning](https://semver.org/).  Select a major ve
 
 | Vault4s | http4s | Scala 2.11 | Scala 2.12 | Scala 2.13 | Scala 3 | Status    |
 |--------:|-------:|:----------:|:----------:|:----------:|:-------:|:----------|
-|     9.x | 0.23.x | ⛔         | ✓          | ✓          | ✓       | Milestone |
-|     8.x | 0.22.x | ⛔         | ✓          | ✓          | ✓       | Milestone |
-|     7.x | 0.21.x | ⛔         | ✓          | ✓          | ⛔      | Stable    |
+|     9.x | 0.23.x | ⛔         | ✓          | ✓          | ✓       | Stable    |
+|     8.x | 0.22.x | ⛔         | ✓          | ✓          | ✓       | EOL       |
+|     7.x | 0.21.x | ⛔         | ✓          | ✓          | ⛔      | EOL       |
 |     6.x | 0.21.x | ⛔         | ✓          | ✓          | ⛔      | EOL       |
 |     5.x | 0.20.x | ✓          | ✓          | ⛔         | ⛔      | EOL       |

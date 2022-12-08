@@ -24,7 +24,9 @@ import org.scalacheck.Gen
 object TransitGenerators extends VaultArbitraries {
 
   def nelGen[A](base: Gen[A]): Gen[NonEmptyList[A]] =
-    Gen.nonEmptyListOf(base).map((xs: List[A]) => NonEmptyList.fromListUnsafe(xs))
+    Gen
+      .nonEmptyListOf(base)
+      .map((xs: List[A]) => NonEmptyList.fromListUnsafe(xs))
 
   // copied from scodec-bits repository.
   def standardByteVectors(maxSize: Int): Gen[ByteVector] = for {
@@ -32,38 +34,46 @@ object TransitGenerators extends VaultArbitraries {
     bytes <- Gen.listOfN(size, Gen.choose(0, 255))
   } yield ByteVector(bytes: _*)
 
-  val byteVector: Gen[ByteVector] = Gen.choose(1, 1000).flatMap(standardByteVectors)
+  val byteVector: Gen[ByteVector] =
+    Gen.choose(1, 1000).flatMap(standardByteVectors)
 
   val base64: Gen[Base64] = byteVector.map(Base64.fromByteVector)
 
   // we generate examples like we have seen so far: a base64-encoded literal, prefixed by `vault:v1:`
-  val cipherText: Gen[CipherText] = base64.map( x => CipherText(s"vault:v1:${x.value}"))
-  val plaintext: Gen[PlainText] = base64.map( (p: Base64) => PlainText(p))
-  val context: Gen[Context] = base64.map( (p: Base64) => Context(p))
+  val cipherText: Gen[CipherText] =
+    base64.map(x => CipherText(s"vault:v1:${x.value}"))
+  val plaintext: Gen[PlainText] = base64.map((p: Base64) => PlainText(p))
+  val context: Gen[Context] = base64.map((p: Base64) => Context(p))
 
-  val transitError: Gen[TransitError] = Gen.alphaNumStr.map( (s: String) => TransitError(s))
+  val transitError: Gen[TransitError] =
+    Gen.alphaNumStr.map((s: String) => TransitError(s))
 
   val genEncryptRequest: Gen[EncryptRequest] =
-    for { pt <- plaintext ; ctx <- context } yield EncryptRequest(pt, Some(ctx))
+    for { pt <- plaintext; ctx <- context } yield EncryptRequest(pt, Some(ctx))
 
-  val encryptResult: Gen[EncryptResult] = 
+  val encryptResult: Gen[EncryptResult] =
     cipherText.map((p: CipherText) => EncryptResult(p))
 
   val genEncryptBatchRequest: Gen[EncryptBatchRequest] =
     nelGen(genEncryptRequest).map(ps => EncryptBatchRequest(ps))
- 
+
   val genAllRightEncryptBatchResponse: Gen[EncryptBatchResponse] =
     nelGen(right[TransitError, EncryptResult](encryptResult))
-      .map( (rps: NonEmptyList[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+      .map((rps: NonEmptyList[TransitError.Or[EncryptResult]]) =>
+        EncryptBatchResponse(rps)
+      )
 
   val genEncryptBatchResponse: Gen[EncryptBatchResponse] =
     nelGen(errorOr(encryptResult))
-      .map((rps: NonEmptyList[TransitError.Or[EncryptResult]]) => EncryptBatchResponse(rps))
+      .map((rps: NonEmptyList[TransitError.Or[EncryptResult]]) =>
+        EncryptBatchResponse(rps)
+      )
 
-  def some[A](genA: Gen[A]): Gen[Option[A]] = genA.map( (a:A) => Some(a) )
+  def some[A](genA: Gen[A]): Gen[Option[A]] = genA.map((a: A) => Some(a))
   def right[A, B](genB: Gen[B]): Gen[Either[A, B]] = genB.map(b => Right(b))
 
-  def errorOr[A](genA: Gen[A]): Gen[TransitError.Or[A]] = either(transitError, genA)
+  def errorOr[A](genA: Gen[A]): Gen[TransitError.Or[A]] =
+    either(transitError, genA)
 
   def either[T, U](gt: Gen[T], gu: Gen[U]): Gen[Either[T, U]] =
     Gen.oneOf(gt.map(Left(_)), gu.map(Right(_)))
