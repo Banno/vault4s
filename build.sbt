@@ -95,6 +95,9 @@ inThisBuild(
     startYear := Some(2019),
     licenses := Seq(License.Apache2),
     homepage := Some(url("https://banno.github.io/vault4s")),
+
+    // This is nasty and can go away after
+    // https://github.com/typelevel/sbt-typelevel/issues/442
     tlCiDependencyGraphJob := false,
     githubWorkflowAddedJobs += WorkflowJob(
       "dependency-submission",
