@@ -1,6 +1,7 @@
 import laika.helium.Helium
 import laika.helium.config.HeliumIcon
 import laika.helium.config.IconLink
+import org.typelevel.sbt.gha.WorkflowStep._
 import org.typelevel.sbt.site.GenericSiteSettings
 
 val Scala213 = "2.13.10"
@@ -93,6 +94,21 @@ inThisBuild(
     organizationName := "Jack Henry & Associates, Inc.®",
     startYear := Some(2019),
     licenses := Seq(License.Apache2),
-    homepage := Some(url("https://banno.github.io/vault4s"))
+    homepage := Some(url("https://banno.github.io/vault4s")),
+    tlCiDependencyGraphJob := false,
+    githubWorkflowAddedJobs += WorkflowJob(
+      "dependency-submission",
+      "Submit Dependencies",
+      scalas = List(scalaVersion.value),
+      javas = List(githubWorkflowJavaVersions.value.head),
+      steps = githubWorkflowJobSetup.value.toList :+
+        Use(
+          UseRef.Public("scalacenter", "sbt-dependency-submission", "v2"),
+          name = Some("Submit Dependencies"),
+          params = Map(
+            "configs-ignore" -> "scala-doc-tool scala-tool test"
+          )
+        )
+    ).copy(cond = Some("github.event_name != 'pull_request'"))
   )
 )
