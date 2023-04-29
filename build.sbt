@@ -109,7 +109,8 @@ inThisBuild(
           UseRef.Public("scalacenter", "sbt-dependency-submission", "v2"),
           name = Some("Submit Dependencies"),
           params = Map(
-            "configs-ignore" -> "doc scala-doc-tool scala-tool test"
+            "modules-ignore" -> "docs_2.12 docs_2.13 docs_3",
+            "configs-ignore" -> "scala-doc-tool scala-tool test"
           )
         )
     ).copy(cond = Some("github.event_name != 'pull_request'"))
