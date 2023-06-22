@@ -24,7 +24,7 @@ val betterMonadicForV = "0.3.1"
 lazy val `vault4s` = project
   .in(file("."))
   .settings(publish / skip := true)
-  .disablePlugins(MimaPlugin)
+  .enablePlugins(NoPublishPlugin)
   .aggregate(core)
 
 lazy val core = project
