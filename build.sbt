@@ -110,7 +110,7 @@ inThisBuild(
           name = Some("Submit Dependencies"),
           params = Map(
             "modules-ignore" -> "docs_2.12 docs_2.13 docs_3",
-            "configs-ignore" -> "scala-doc-tool scala-tool test"
+            "configs-ignore" -> "compile-time scala-doc-tool scala-tool test"
           )
         )
     ).copy(cond = Some("github.event_name != 'pull_request'"))
