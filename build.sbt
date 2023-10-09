@@ -9,6 +9,7 @@ val Scala3 = "3.3.1"
 ThisBuild / crossScalaVersions := Seq("2.12.18", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 ThisBuild / tlBaseVersion := "9.1"
+ThisBuild / tlSonatypeUseLegacyHost := true
 
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
