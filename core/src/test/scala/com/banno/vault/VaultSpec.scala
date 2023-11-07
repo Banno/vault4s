@@ -18,28 +18,28 @@ package com.banno.vault
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-
 import cats.effect.{Concurrent, IO}
-import cats.implicits._
+import cats.implicits.*
 import com.banno.vault.models.{
   CertificateData,
   CertificateRequest,
+  VaultKeys,
   VaultSecret,
   VaultSecretRenewal,
-  VaultToken,
-  VaultKeys
+  VaultToken
 }
-import io.circe.Decoder
-import org.http4s._
-import org.http4s.implicits._
+import io.circe.{Codec, Decoder}
+import org.http4s.*
+import org.http4s.implicits.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
-import org.http4s.circe._
+import org.http4s.circe.*
 import org.http4s.client.Client
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import munit.{CatsEffectSuite, ScalaCheckEffectSuite}
-import org.scalacheck._
+import org.scalacheck.*
+
 import scala.util.Random
 import org.scalacheck.effect.PropF
 import org.typelevel.ci.CIString
@@ -99,6 +99,12 @@ class VaultSpec
   object Lease {
     implicit val leaseDecoder: Decoder[Lease] =
       Decoder.forProduct1("lease_id")(Lease.apply)
+  }
+
+  case class SelfManaged(key: String, kid: String)
+  object SelfManaged {
+    implicit val codec: Codec[SelfManaged] =
+      Codec.forProduct2("key", "kid")(SelfManaged.apply)(sm => (sm.key, sm.kid))
   }
 
   implicit val certificateRequestDecoder: Decoder[CertificateRequest] =
@@ -286,6 +292,41 @@ class VaultSpec
                 | "renewable": $renewable
                 |}""".stripMargin)
         }
+
+      case req @ POST -> Root / "v1" / "secret" / "selfmanaged" / "200" / kid =>
+        checkVaultToken(req) {
+          Ok(s"""
+               |{
+               | "data": {
+               |   "key": "$privateKey",
+               |   "kid": "$kid"
+               | },
+               | "lease_duration": $leaseDuration,
+               | "lease_id": "$leaseId",
+               | "renewable": $renewable
+               |}""".stripMargin)
+        }
+
+      case req @ GET -> Root / "v1" / "secret" / "selfmanaged" / "204" / kid =>
+        checkVaultToken(req) {
+          Ok(s"""
+               |{
+               | "data": {
+               |   "key": "$privateKey",
+               |   "kid": "$kid"
+               | },
+               | "lease_duration": $leaseDuration,
+               | "lease_id": "$leaseId",
+               | "renewable": $renewable
+               |}""".stripMargin)
+        }
+
+      case req @ POST -> Root / "v1" / "secret" / "selfmanaged" / "204" / _ =>
+        checkVaultToken(req)(NoContent())
+
+      case req @ POST -> Root / "v1" / "secret" / "selfmanaged" / "4xx" / _ =>
+        checkVaultToken(req)(Forbidden())
+
       case req @ PUT -> Root / "v1" / "sys" / "leases" / "renew" =>
         checkVaultToken(req) {
           req.decodeJson[IncrementLease].flatMap { _ =>
@@ -624,6 +665,92 @@ class VaultSpec
             renewable.some
           )
         )
+    }
+  }
+
+  test("generateSecret works as expected when receiving a 200 Ok response") {
+    PropF.forAllF(VaultArbitraries.validVaultUri, Gen.identifier) {
+      (uri, kid) =>
+        Vault
+          .generateSecret[IO, SelfManaged, SelfManaged](mockClient, uri)(
+            clientToken,
+            s"secret/selfmanaged/200/$kid",
+            SelfManaged(privateKey, kid)
+          )
+          .assertEquals(
+            VaultSecret(
+              SelfManaged(privateKey, kid),
+              leaseDuration.some,
+              leaseId.some,
+              renewable.some
+            )
+          )
+    }
+  }
+
+  test(
+    "generateSecret works as expected when receiving a 200 Ok with an unparsable response"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri, Gen.identifier) {
+      (uri, kid) =>
+        Vault
+          .generateSecret[IO, SelfManaged, VaultKeys](mockClient, uri)(
+            clientToken,
+            s"secret/selfmanaged/200/$kid",
+            SelfManaged(privateKey, kid)
+          )
+          .redeem(
+            error =>
+              if (error.getMessage.contains(privateKey))
+                PropF
+                  .falsified[IO]
+                  .label(s"Secret data in: ${error.getMessage}")
+              else PropF.passed[IO].label("Secret data redacted"),
+            _ => PropF.falsified[IO].label("Data should not be parseable")
+          )
+    }
+  }
+
+  test(
+    "generateSecret works as expected when receiving a 204 No Content response"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri, Gen.identifier) {
+      (uri, kid) =>
+        Vault
+          .generateSecret[IO, SelfManaged, SelfManaged](mockClient, uri)(
+            clientToken,
+            s"secret/selfmanaged/204/$kid",
+            SelfManaged(privateKey, kid)
+          )
+          .assertEquals(
+            VaultSecret(
+              SelfManaged(privateKey, kid),
+              leaseDuration.some,
+              leaseId.some,
+              renewable.some
+            )
+          )
+    }
+  }
+
+  test("generateSecret works as expected when receiving a 4xx response") {
+    PropF.forAllF(VaultArbitraries.validVaultUri, Gen.identifier) {
+      (uri, kid) =>
+        Vault
+          .generateSecret[IO, SelfManaged, SelfManaged](mockClient, uri)(
+            clientToken,
+            s"secret/selfmanaged/4xx/$kid",
+            SelfManaged(privateKey, kid)
+          )
+          .redeem(
+            error =>
+              if (error.getMessage.contains(privateKey))
+                PropF
+                  .falsified[IO]
+                  .label(s"Secret data in: ${error.getMessage}")
+              else PropF.passed[IO].label("Secret data redacted"),
+            _ => PropF.falsified[IO].label("Data should not be parseable")
+          )
     }
   }
 

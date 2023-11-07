@@ -308,19 +308,38 @@ object Vault {
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
     val withBody = request.withEntity(payload.asJson)
-    for {
-      secret <- F.handleErrorWith(
-        client.expect[VaultSecret[B]](withBody)(jsonOf[F, VaultSecret[B]])
-      ) { e =>
+    client.run(withBody).use {
+      case resp @ Status.Successful(_) =>
+        resp
+          .attemptAs[VaultSecret[B]](jsonOf[F, VaultSecret[B]])
+          .adaptError {
+            case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+              InvalidMessageBodyFailure(
+                "Could not decode secret key value",
+                cause.some
+              )
+          }
+          .valueOrF { decodeError =>
+            readSecret[F, B](client, vaultUri)(token, secretPath)
+              .adaptError { case readError =>
+                decodeError.addSuppressed(readError)
+                VaultRequestError(
+                  request = withBody,
+                  cause = decodeError.some,
+                  extra = s"tokenLength=${token.length}".some
+                )
+              }
+          }
+      case resp =>
         F.raiseError(
           VaultRequestError(
             request = withBody,
-            cause = e.some,
+            cause =
+              UnexpectedStatus(resp.status, request.method, request.uri).some,
             extra = s"tokenLength=${token.length}".some
           )
         )
-      }
-    } yield secret
+    }
   }
 
   /** This function logs in, requests a secret and then continually asks for a
