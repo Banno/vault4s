@@ -63,6 +63,12 @@ class VaultSpec
       Decoder.forProduct2("role", "jwt")(RoleAndJwt.apply)
   }
 
+  case class Password(password: String)
+  object Password {
+    implicit val decoder: Decoder[Password] =
+      Decoder.forProduct1("password")(Password.apply)
+  }
+
   case class VaultValue(value: String)
   object VaultValue {
     implicit val vaultValueDecoder: Decoder[VaultValue] =
@@ -137,6 +143,12 @@ class VaultSpec
     Random.alphanumeric
       .take(20)
       .mkString // simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+
+  val validUsername: String = UUID.randomUUID().toString
+  val invalidJSONUsername: String = UUID.randomUUID().toString
+  val usernameWithoutToken: String = UUID.randomUUID().toString
+  val usernameWithoutLease: String = UUID.randomUUID().toString
+  val validPassword: String = UUID.randomUUID().toString
 
   val clientToken: String = UUID.randomUUID().toString
   val altClientToken: String = UUID.randomUUID().toString
@@ -254,6 +266,37 @@ class VaultSpec
           case _ =>
             BadRequest("")
         }
+      case req @ POST -> Root / "v1" / "auth" / "userpass" / "login" / username =>
+        req.decodeJson[Password].tupleLeft(username).flatMap {
+          case (`validUsername`, Password(`validPassword`)) =>
+            Ok(s"""
+                  |{
+                  | "auth": {
+                  |   "client_token": "$clientToken",
+                  |   "lease_duration": $leaseDuration,
+                  |   "renewable": $renewable
+                  | }
+                  |}""".stripMargin)
+          case (`invalidJSONUsername`, Password(`validPassword`)) =>
+            Ok(s""" NOT A JSON """)
+          case (`usernameWithoutToken`, Password(`validPassword`)) =>
+            Ok(s"""
+                  |{
+                  | "auth": {
+                  |   "lease_duration": $leaseDuration
+                  | }
+                  |}""".stripMargin)
+          case (`usernameWithoutLease`, Password(`validPassword`)) =>
+            Ok(s"""
+                  |{
+                  | "auth": {
+                  |   "client_token": "$clientToken"
+                  | }
+                  |}""".stripMargin)
+          case _ =>
+            BadRequest("")
+        }
+      
       case req @ POST -> Root / "v1" / "auth" / "kubernetes2" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
           case RoleAndJwt(`validKubernetesRole`, `validKubernetesJwt`) =>
@@ -397,7 +440,7 @@ class VaultSpec
     }
   }
 
-  test("login should fail when the response is not a valid") {
+  test("login should fail when the response is not a valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .login(mockClient, uri)(invalidJSONRoleId)
@@ -502,6 +545,56 @@ class VaultSpec
         .loginKubernetes(mockClient, uri)(
           roleIdWithoutLease,
           validKubernetesJwt
+        )
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test("loginUserPass works as expected when sending valid username and password") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          validUsername,
+          validPassword
+        )
+        .assertEquals(validToken)
+    }
+  }
+
+  test("loginUserPass should fail when the response is not a valid JSON") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          invalidJSONUsername,
+          validPassword
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginUserPass should fail when the response doesn't contain a token") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          usernameWithoutToken,
+          validPassword
+        )
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test("loginUserPass should fail when the response doesn't contain a lease duration") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          usernameWithoutLease,
+          validPassword
         )
         .attempt
         .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
