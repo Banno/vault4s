@@ -608,7 +608,7 @@ class VaultSpec
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .renewSelfToken[IO](mockClient, uri)(
-          VaultToken(clientToken, 3600, true),
+          VaultToken(clientToken, 3600, renewable = true),
           1.hour
         )
         .assertEquals(VaultToken(clientToken, 3600, renewable))
@@ -619,7 +619,7 @@ class VaultSpec
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .revokeSelfToken[IO](mockClient, uri)(
-          VaultToken(clientToken, 3600, true)
+          VaultToken(clientToken, 3600, renewable = true)
         )
         .assertEquals(())
     }

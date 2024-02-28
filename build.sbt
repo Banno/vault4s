@@ -4,7 +4,7 @@ import laika.helium.config.IconLink
 import org.typelevel.sbt.gha.WorkflowStep._
 import org.typelevel.sbt.site.GenericSiteSettings
 
-val Scala213 = "2.13.12"
+val Scala213 = "2.13.13"
 val Scala3 = "3.3.1"
 ThisBuild / crossScalaVersions := Seq("2.12.19", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
