@@ -113,7 +113,8 @@ inThisBuild(
             "modules-ignore" -> "docs_2.12 docs_2.13 docs_3",
             "configs-ignore" -> "compile-time scala-doc-tool scala-tool test"
           )
-        )
-    ).copy(cond = Some("github.event_name != 'pull_request'"))
+        ),
+      cond = Some("github.event_name != 'pull_request'")
+    )
   )
 )
