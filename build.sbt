@@ -16,7 +16,7 @@ ThisBuild / githubWorkflowTargetBranches :=
 
 val http4sV = "0.23.27"
 val munitCatsEffectV = "1.0.7"
-val munitScalaCheckV = "0.7.29"
+val munitScalaCheckV = "1.0.0"
 val scalacheckEffectV = "1.0.4"
 
 val kindProjectorV = "0.13.3"
