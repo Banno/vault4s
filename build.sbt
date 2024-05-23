@@ -15,7 +15,7 @@ ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
 val http4sV = "0.23.27"
-val munitCatsEffectV = "1.0.7"
+val munitCatsEffectV = "2.0.0"
 val munitScalaCheckV = "0.7.29"
 val scalacheckEffectV = "1.0.4"
 
@@ -68,7 +68,7 @@ lazy val commonSettings = Seq(
     "org.http4s" %% "http4s-client" % http4sV,
     "org.http4s" %% "http4s-circe" % http4sV,
     "org.http4s" %% "http4s-dsl" % http4sV % Test,
-    "org.typelevel" %% "munit-cats-effect-3" % munitCatsEffectV % Test,
+    "org.typelevel" %% "munit-cats-effect" % munitCatsEffectV % Test,
     "org.scalameta" %% "munit-scalacheck" % munitScalaCheckV % Test,
     "org.typelevel" %% "scalacheck-effect-munit" % scalacheckEffectV % Test
   )
