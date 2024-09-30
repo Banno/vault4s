@@ -5,7 +5,7 @@ import org.typelevel.sbt.gha.WorkflowStep._
 import org.typelevel.sbt.site.GenericSiteSettings
 
 val Scala213 = "2.13.14"
-val Scala3 = "3.3.3"
+val Scala3 = "3.3.4"
 ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 ThisBuild / tlBaseVersion := "9.2"
