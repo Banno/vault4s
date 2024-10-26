@@ -14,7 +14,7 @@ ThisBuild / tlSonatypeUseLegacyHost := true
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
-val http4sV = "0.23.28"
+val http4sV = "0.23.29"
 val munitCatsEffectV = "2.0.0"
 val munitScalaCheckV = "1.0.0"
 val scalacheckEffectV = "2.0.0-M2"
