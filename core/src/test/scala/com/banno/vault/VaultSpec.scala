@@ -20,7 +20,14 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import cats.effect.{Concurrent, IO}
 import cats.implicits.*
-import com.banno.vault.models.{CertificateData, CertificateRequest, VaultKeys, VaultSecret, VaultSecretRenewal, VaultToken}
+import com.banno.vault.models.{
+  CertificateData,
+  CertificateRequest,
+  VaultKeys,
+  VaultSecret,
+  VaultSecretRenewal,
+  VaultToken
+}
 import io.circe.{Codec, Decoder}
 import org.http4s.*
 import org.http4s.implicits.*
@@ -765,10 +772,7 @@ class VaultSpec
             "",
             leaseDuration,
             waitInterval
-          ): @nowarn())
-          .attempt
-          .compile
-          .last
+          ): @nowarn()).attempt.compile.last
           .assertEquals(
             Some(
               Left(
@@ -798,10 +802,7 @@ class VaultSpec
             "",
             leaseDuration,
             waitInterval
-          ): @nowarn())
-          .attempt
-          .compile
-          .last
+          ): @nowarn()).attempt.compile.last
           .assertEquals(
             Some(
               Left(
