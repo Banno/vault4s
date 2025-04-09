@@ -16,29 +16,33 @@
 
 package com.banno.vault
 
+import cats.*
+import cats.effect.*
+import cats.syntax.all.*
+import com.banno.vault.models.*
 import fs2.Stream
-import cats._
-import cats.effect._
-import cats.syntax.all._
-import com.banno.vault.models.{
-  CertificateData,
-  CertificateRequest,
-  VaultRequestError,
-  VaultSecret,
-  VaultSecretRenewal,
-  VaultToken,
-  VaultKeys
-}
+import io.circe.syntax.*
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
-import io.circe.syntax._
-import org.http4s._
-import org.http4s.circe._
-import org.http4s.client._
-import org.http4s.implicits._
+import org.http4s.*
+import org.http4s.circe.*
+import org.http4s.client.*
+import org.http4s.implicits.*
 import org.typelevel.ci.CIString
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
+/** Helper methods for working with Vault
+  *
+  * @note
+  *   The implementations here are mostly correct (with the exception of
+  *   deprecated methods) however they do not handle token lifecycle or retries
+  *   (Vault is eventually consistent, and when inconsistency is detected, they
+  *   return `412 Precondition Failed` instead of the stale value).
+  *
+  * @note
+  *   Consider using the more modern [[VaultClient]] for better ergonomics,
+  *   lifecycle management, and retries.
+  */
 object Vault {
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
@@ -163,6 +167,34 @@ object Vault {
     }
   }
 
+  /** https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#delete-secret
+    */
+  def deleteSecret[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String,
+      secretPath: String
+  )(implicit F: Concurrent[F]): F[Unit] = {
+    val newSecretPath =
+      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
+      method = Method.DELETE,
+      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+    )
+    client
+      .status(request)
+      .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
+      .handleErrorWith { e =>
+        F.raiseError(
+          VaultRequestError(
+            request,
+            e.some,
+            s"tokenLength=${token.length}".some
+          )
+        )
+      }
+      .void
+  }
+
   /** https://www.vaultproject.io/api/system/leases.html#renew-lease
     */
   def renewLease[F[_]](client: Client[F], vaultUri: Uri)(
@@ -198,7 +230,7 @@ object Vault {
     } yield renewal
   }
 
-  /** https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
+  /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
   def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken,
@@ -342,9 +374,20 @@ object Vault {
     }
   }
 
-  /** This function logs in, requests a secret and then continually asks for a
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    *
+    * This function logs in, requests a secret and then continually asks for a
     * duration extension of the lease after each waitInterval
+    *
+    * @note
+    *   This lease may be a hint, rather than actually expiring, please check
+    *   the secrets engine documentation before using.
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def keepLoginAndSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -372,6 +415,13 @@ object Vault {
       }
   }
 
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -392,6 +442,13 @@ object Vault {
         )
       )
 
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -414,13 +471,20 @@ object Vault {
         )
       )
 
-  /** This function logs into the Vault server given by the vaultUri, to obtain
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    *
+    * This function logs into the Vault server given by the vaultUri, to obtain
     * a loginToken. It then also provides a Stream that continuously renews the
     * token when it is about to finish.
     *   - keeps the token constantly renewed
     *   - Upon termination of the Stream (from the using application) revokes
     *     the token. However, any error on revoking the token is ignored.
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken,
       tokenLeaseExtension: FiniteDuration
@@ -429,13 +493,15 @@ object Vault {
     def renewOnDuration(token: VaultToken): F[VaultToken] = {
       val waitInterval: Long =
         Math.min(token.leaseDuration, tokenLeaseExtension.toSeconds) * 9 / 10
-      T.sleep(waitInterval.seconds) *>
+      T.pure(println(s"Sleeping $waitInterval seconds")) *>
+        T.sleep(waitInterval.seconds) *>
         Vault.renewSelfToken(client, vaultUri)(token, tokenLeaseExtension)
     }
 
     def keep(token: VaultToken): Stream[F, Unit] =
       Stream
         .iterateEval(token)(renewOnDuration)
+        .debug(_.toString)
         .takeThrough(_.renewable)
         .last
         .flatMap(lastRenewal =>
@@ -446,11 +512,18 @@ object Vault {
     def cleanup(token: VaultToken): F[Unit] =
       revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
 
-    Stream.bracket(token.pure[F])(cleanup).flatMap { token =>
+    Stream.bracketWeak(token.pure[F])(cleanup).flatMap { token =>
       Stream.emit(token.clientToken).concurrently(keep(token))
     }
   }
 
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginAndKeep[F[_]: Async](
       client: Client[F],
       vaultUri: Uri
@@ -461,12 +534,23 @@ object Vault {
         keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension)
       )
 
-  /** This function uses the given Vault client, uri, and authenticated token to
+  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
+    * that can result in immediate revocation of the token.
+    *
+    * This function uses the given Vault client, uri, and authenticated token to
     * obtain a secret from Vault. It then also provides a Stream that
     * continuously renews the lease on that secret, when it is about to finish.
     * Upon termination of the Stream (from the using application) revokes the
-    * token (but any error on revokation is ignored).
+    * token (but any error on revocation is ignored).
+    *
+    * @note
+    *   This lease may be a hint, rather than actually expiring, please check
+    *   the secrets engine documentation before using.
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def readSecretAndRetain[F[_], A: Decoder](
       client: Client[F],
       vaultUri: Uri,
@@ -538,5 +622,4 @@ object Vault {
     override def getMessage(): String =
       s"Token lease $leaseId could not be renewed any longer"
   }
-
 }
