@@ -493,8 +493,7 @@ object Vault {
     def renewOnDuration(token: VaultToken): F[VaultToken] = {
       val waitInterval: Long =
         Math.min(token.leaseDuration, tokenLeaseExtension.toSeconds) * 9 / 10
-      T.pure(println(s"Sleeping $waitInterval seconds")) *>
-        T.sleep(waitInterval.seconds) *>
+      T.sleep(waitInterval.seconds) *>
         Vault.renewSelfToken(client, vaultUri)(token, tokenLeaseExtension)
     }
 
