@@ -20,14 +20,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import cats.effect.{Concurrent, IO}
 import cats.implicits.*
-import com.banno.vault.models.{
-  CertificateData,
-  CertificateRequest,
-  VaultKeys,
-  VaultSecret,
-  VaultSecretRenewal,
-  VaultToken
-}
+import com.banno.vault.models.{CertificateData, CertificateRequest, VaultKeys, VaultSecret, VaultSecretRenewal, VaultToken}
 import io.circe.{Codec, Decoder}
 import org.http4s.*
 import org.http4s.implicits.*
@@ -43,6 +36,8 @@ import org.scalacheck.*
 import scala.util.Random
 import org.scalacheck.effect.PropF
 import org.typelevel.ci.CIString
+
+import scala.annotation.nowarn
 
 class VaultSpec
     extends CatsEffectSuite
@@ -764,13 +759,13 @@ class VaultSpec
     ) { case (uri, leaseDuration, waitInterval) =>
       PropF.boolean[IO](leaseDuration < waitInterval) ==> {
 
-        Vault
+        (Vault
           .loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(
             validRoleId,
             "",
             leaseDuration,
             waitInterval
-          )
+          ): @nowarn())
           .attempt
           .compile
           .last
@@ -796,14 +791,14 @@ class VaultSpec
     ) { case (uri, leaseDuration, waitInterval) =>
       PropF.boolean[IO](leaseDuration < waitInterval) ==> {
 
-        Vault
+        (Vault
           .loginK8sAndKeepSecretLeased[IO, Unit](mockClient, uri)(
             validRoleId,
             validKubernetesJwt,
             "",
             leaseDuration,
             waitInterval
-          )
+          ): @nowarn())
           .attempt
           .compile
           .last
