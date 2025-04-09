@@ -172,9 +172,10 @@ object VaultClient {
       if (token.renewable)
         renewWithRetry(token, client, vaultConfig, consistencyConfig)
           .recoverWith { case vre: VaultRequestError =>
-            (revoke(token) *> login).adaptErr { case e =>
-              vre.addSuppressed(e)
-              vre
+            (revoke(token) *> login).adaptErr {
+              case e if !(vre eq e) =>
+                vre.addSuppressed(e)
+                vre
             }
           }
       else
