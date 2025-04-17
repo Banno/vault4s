@@ -762,7 +762,7 @@ object MockVaultService {
       case Failure(_, path, status, _) => Log.Failure(path, status)
       case ThrownException(_, path, throwable) =>
         Log.ThrownException(path, throwable)
-      case TokenNotFound(_, path, _) => Log.TokenNotFound(path)
+      case TokenNotFound(_, path, token) => Log.TokenNotFound(path, token)
       case TokenExpired(_, path, token) =>
         Log.TokenExpired(path, token.token.clientToken)
       case TokenRenewed(_, path, token) =>
@@ -934,7 +934,7 @@ object MockVaultService {
     final case class ThrownException(path: Path, throwable: Throwable)
         extends Log
 
-    final case class TokenNotFound(path: Path) extends Log
+    final case class TokenNotFound(path: Path, token: String) extends Log
     final case class TokenExpired(path: Path, token: String) extends Log
     final case class TokenRenewed(path: Path, token: String) extends Log
     final case class TokenRevoked(path: Path, token: String) extends Log

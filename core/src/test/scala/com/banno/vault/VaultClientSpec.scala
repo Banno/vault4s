@@ -34,6 +34,7 @@ import munit.{AnyFixture, CatsEffectSuite, ScalaCheckEffectSuite}
 import org.http4s.Status
 import org.http4s.client.UnexpectedStatus
 import org.http4s.syntax.literals.*
+
 import scala.concurrent.duration.DurationInt
 
 class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
@@ -65,7 +66,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
       s"${Console.BOLD}=> MockVaultServer${Console.RESET}\n$serverClue".some
     } :: super.munitTestTransforms
 
-  test("VaultMTL.loginOnce won't revoke the token prematurely") {
+  test("VaultClient.loginOnce won't revoke the token prematurely") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
@@ -96,7 +97,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL.loginOnce won't renew the token") {
+  test("VaultClient.loginOnce won't renew the token") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
@@ -131,8 +132,11 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
               path"foo"
             ),
             TokenExpired(path"/v1/secret/foo", s"$roleLogId token 0"),
-            TokenNotFound(path"/v1/secret/foo"),
-            TokenNotFound(path"/v1/auth/token/revoke-self")
+            TokenNotFound(path"/v1/secret/foo", s"$roleLogId token 0"),
+            TokenNotFound(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
           )
         )
       } yield ()
@@ -140,7 +144,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL.loginAndKeep won't revoke the token prematurely") {
+  test("VaultClient.loginAndKeep won't revoke the token prematurely") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
@@ -175,7 +179,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL.loginAndKeep will renew the token") {
+  test("VaultClient.loginAndKeep will renew the token") {
     val program =
       for {
         _ <- mockService.addRoles(
@@ -228,7 +232,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   }
 
   test(
-    "VaultMTL.loginAndKeep will get a new token if the token cannot be renewed"
+    "VaultClient.loginAndKeep will get a new token if the token cannot be renewed"
   ) {
     val program =
       for {
@@ -301,7 +305,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL.logAndKeep will retry when a 412 is returned") {
+  test("VaultClient.logAndKeep will retry when a 412 is returned") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
@@ -336,7 +340,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL.logAndKeep will respect the 412 retry limit") {
+  test("VaultClient.logAndKeep will respect the 412 retry limit") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
@@ -427,7 +431,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL#readSecret will retry when a 412 is returned") {
+  test("VaultClient#readSecret will retry when a 412 is returned") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
@@ -464,7 +468,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultMTL#readSecret will respect the 412 retry limit") {
+  test("VaultClient#readSecret will respect the 412 retry limit") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
