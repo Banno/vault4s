@@ -235,32 +235,35 @@ object Vault {
   def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken,
       newLeaseDuration: FiniteDuration
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-      headers =
-        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-    ).withEntity(
-      Json.obj(
-        ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
-      )
-    )
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(
-          VaultRequestError(
-            request,
-            e.some,
-            s"tokenLength=${token.clientToken.length}".some
-          )
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    if (!token.renewable)
+      new NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
+    else {
+      val request = Request[F](
+        method = Method.POST,
+        uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
+        headers =
+          Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+      ).withEntity(
+        Json.obj(
+          ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
         )
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
-        decoderError
       )
-    } yield token
-  }
+      for {
+        json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+          F.raiseError(
+            VaultRequestError(
+              request,
+              e.some,
+              s"tokenLength=${token.clientToken.length}".some
+            )
+          )
+        }
+        token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+          decoderError
+        )
+      } yield token
+    }
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
     */
