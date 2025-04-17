@@ -44,6 +44,8 @@ import scala.util.Random
 import org.scalacheck.effect.PropF
 import org.typelevel.ci.CIString
 
+import scala.annotation.nowarn
+
 class VaultSpec
     extends CatsEffectSuite
     with ScalaCheckEffectSuite
@@ -764,16 +766,13 @@ class VaultSpec
     ) { case (uri, leaseDuration, waitInterval) =>
       PropF.boolean[IO](leaseDuration < waitInterval) ==> {
 
-        Vault
+        (Vault
           .loginAndKeepSecretLeased[IO, Unit](mockClient, uri)(
             validRoleId,
             "",
             leaseDuration,
             waitInterval
-          )
-          .attempt
-          .compile
-          .last
+          ): @nowarn()).attempt.compile.last
           .assertEquals(
             Some(
               Left(
@@ -796,17 +795,14 @@ class VaultSpec
     ) { case (uri, leaseDuration, waitInterval) =>
       PropF.boolean[IO](leaseDuration < waitInterval) ==> {
 
-        Vault
+        (Vault
           .loginK8sAndKeepSecretLeased[IO, Unit](mockClient, uri)(
             validRoleId,
             validKubernetesJwt,
             "",
             leaseDuration,
             waitInterval
-          )
-          .attempt
-          .compile
-          .last
+          ): @nowarn()).attempt.compile.last
           .assertEquals(
             Some(
               Left(

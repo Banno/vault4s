@@ -16,9 +16,10 @@
 
 package com.banno.vault.models
 
-import io.circe.Decoder
+import io.circe.{Decoder, Encoder, Json}
 import cats.Eq
-import cats.implicits._
+import cats.implicits.*
+import io.circe.syntax.*
 
 final case class VaultToken(
     clientToken: String,
@@ -35,6 +36,15 @@ object VaultToken {
         c.downField("lease_duration").as[Long],
         c.downField("renewable").as[Boolean]
       )(VaultToken.apply)
+    }
+
+  implicit val encoder: Encoder[VaultToken] =
+    Encoder.instance { vt =>
+      Json.obj(
+        "client_token" := vt.clientToken,
+        "lease_duration" := vt.leaseDuration,
+        "renewable" := vt.renewable
+      )
     }
 
   implicit val vaultTokenEq: Eq[VaultToken] =
