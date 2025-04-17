@@ -47,6 +47,13 @@ trait VaultClient[F[_]] {
     */
   def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]]
 
+  /** Convenience wrapper for `readSecret`, when the renewal information is not
+    * needed.
+    * @see
+    *   [[readSecret]]
+    */
+  def readSecretData[A: Decoder](secretPath: String): F[A]
+
   /** @note
     *   Despite being a prefix common to all secrets, `secret/` does need to
     *   appear in `secretPath`. `/v1/`, however, does not need to be included.
@@ -285,6 +292,9 @@ object VaultClient {
         )
       }
 
+    override def readSecretData[A: Decoder](secretPath: String): F[A] =
+      readSecret[A](secretPath).map(_.data)
+
     override def listSecrets(secretPath: String): F[VaultKeys] =
       retryOnPreconditionFailed {
         tokenRef.get.flatMap(
@@ -348,6 +358,9 @@ object VaultClient {
           secretPath: String
       ): G[VaultSecret[A]] =
         fg(vault.readSecret[A](secretPath))
+
+      override def readSecretData[A: Decoder](secretPath: String): G[A] =
+        fg(vault.readSecretData[A](secretPath))
 
       override def listSecrets(secretPath: String): G[VaultKeys] =
         fg(vault.listSecrets(secretPath))
