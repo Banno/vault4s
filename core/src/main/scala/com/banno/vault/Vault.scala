@@ -503,7 +503,6 @@ object Vault {
     def keep(token: VaultToken): Stream[F, Unit] =
       Stream
         .iterateEval(token)(renewOnDuration)
-        .debug(_.toString)
         .takeThrough(_.renewable)
         .last
         .flatMap(lastRenewal =>
