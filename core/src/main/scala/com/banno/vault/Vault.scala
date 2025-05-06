@@ -377,15 +377,23 @@ object Vault {
     }
   }
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
     *
-    * This function logs in, requests a secret and then continually asks for a
-    * duration extension of the lease after each waitInterval
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
+    * method fundamentally misunderstands how V1 secret leases work in Vault.
+    * They aren't leases which invalidate the secret when they expire, they're
+    * cache hints that suggest how long to wait before checking if the value has
+    * changed.
     *
-    * @note
-    *   This lease may be a hint, rather than actually expiring, please check
-    *   the secrets engine documentation before using.
+    * There's no functional difference between using this method and simply
+    * reading the secret once. <hr/> This function logs in, requests a secret
+    * and then continually asks for a duration extension of the lease after each
+    * waitInterval
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -418,8 +426,23 @@ object Vault {
       }
   }
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
+    *
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
+    * method fundamentally misunderstands how V1 secret leases work in Vault.
+    * They aren't leases which invalidate the secret when they expire, they're
+    * cache hints that suggest how long to wait before checking if the value has
+    * changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once. <hr/> This function logs in, requests a secret
+    * and then continually asks for a duration extension of the lease after each
+    * waitInterval
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -445,8 +468,23 @@ object Vault {
         )
       )
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
+    *
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
+    * method fundamentally misunderstands how V1 secret leases work in Vault.
+    * They aren't leases which invalidate the secret when they expire, they're
+    * cache hints that suggest how long to wait before checking if the value has
+    * changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once. <hr/> This function logs in, requests a secret
+    * and then continually asks for a duration extension of the lease after each
+    * waitInterval
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -474,15 +512,15 @@ object Vault {
         )
       )
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
     *
-    * This function logs into the Vault server given by the vaultUri, to obtain
-    * a loginToken. It then also provides a Stream that continuously renews the
-    * token when it is about to finish.
-    *   - keeps the token constantly renewed
-    *   - Upon termination of the Stream (from the using application) revokes
-    *     the token. However, any error on revoking the token is ignored.
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <hr/> This function continually asks for a
+    * duration extension of the token after each waitInterval
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -513,13 +551,24 @@ object Vault {
     def cleanup(token: VaultToken): F[Unit] =
       revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
 
-    Stream.bracketWeak(token.pure[F])(cleanup).flatMap { token =>
-      Stream.emit(token.clientToken).concurrently(keep(token))
+    Stream.bracket(token.pure[F])(cleanup).flatMap { token =>
+      Stream
+        .emit(token.clientToken)
+        .covary[F]
+        .combine(keep(token).as(token.clientToken))
     }
   }
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
+    *
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <hr/> This function logs in and then
+    * continually asks for a duration extension of the token after each
+    * waitInterval
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -535,18 +584,25 @@ object Vault {
         keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension)
       )
 
-  /** **WARNING** This method has a fundamental flaw in how it uses `fs2.Stream`
-    * that can result in immediate revocation of the token.
+  /** <h1>WARNING: This method is deeply flawed.</h1> <h2>CAUTION: `fs2.Stream`
+    * abuse</h2> `fs2.Stream` is entirely the wrong effect type to model what is
+    * happening here, because of this there was a long-standing bug where it
+    * would immediately revoke the token.
     *
-    * This function uses the given Vault client, uri, and authenticated token to
-    * obtain a secret from Vault. It then also provides a Stream that
-    * continuously renews the lease on that secret, when it is about to finish.
-    * Upon termination of the Stream (from the using application) revokes the
-    * token (but any error on revocation is ignored).
+    * The fix for this required changing the semantics of the stream, and it now
+    * emits a value every time the token is refreshed. This may change the
+    * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
+    * method fundamentally misunderstands how V1 secret leases work in Vault.
+    * They aren't leases which invalidate the secret when they expire, they're
+    * cache hints that suggest how long to wait before checking if the value has
+    * changed.
     *
-    * @note
-    *   This lease may be a hint, rather than actually expiring, please check
-    *   the secrets engine documentation before using.
+    * There's no functional difference between using this method and simply
+    * reading the secret once. <hr/> This function uses the given Vault client,
+    * uri, and authenticated token to obtain a secret from Vault. It then also
+    * provides a Stream that continuously renews the lease on that secret, when
+    * it is about to finish. Upon termination of the Stream (from the using
+    * application) revokes the token (but any error on revocation is ignored).
     */
   @deprecated(
     message = "Deprecated in favor of VaultClient, see scaladoc for details",
@@ -595,7 +651,7 @@ object Vault {
       }
 
     Stream.bracket(read)(cleanup).flatMap { secret =>
-      Stream.emit(secret.data).concurrently(keep(secret))
+      Stream.emit(secret.data).covary[F].combine(keep(secret).as(secret.data))
     }
   }
 
