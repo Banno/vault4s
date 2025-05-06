@@ -383,7 +383,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
     * method fundamentally misunderstands how V1 secret leases work in Vault.
     * They aren't leases which invalidate the secret when they expire, they're
@@ -432,7 +432,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
     * method fundamentally misunderstands how V1 secret leases work in Vault.
     * They aren't leases which invalidate the secret when they expire, they're
@@ -474,7 +474,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
     * method fundamentally misunderstands how V1 secret leases work in Vault.
     * They aren't leases which invalidate the secret when they expire, they're
@@ -518,7 +518,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <hr/> This function continually asks for a
     * duration extension of the token after each waitInterval
     */
@@ -565,7 +565,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <hr/> This function logs in and then
     * continually asks for a duration extension of the token after each
     * waitInterval
@@ -590,7 +590,7 @@ object Vault {
     * would immediately revoke the token.
     *
     * The fix for this required changing the semantics of the stream, and it now
-    * emits a value every time the token is refreshed. This may change the
+    * emits a value twice - both the first and final token. This may change the
     * semantics of downstream code. <h2>CAUTION: Vault secret leases</h2> This
     * method fundamentally misunderstands how V1 secret leases work in Vault.
     * They aren't leases which invalidate the secret when they expire, they're
