@@ -16,29 +16,33 @@
 
 package com.banno.vault
 
+import cats.*
+import cats.effect.*
+import cats.syntax.all.*
+import com.banno.vault.models.*
 import fs2.Stream
-import cats._
-import cats.effect._
-import cats.syntax.all._
-import com.banno.vault.models.{
-  CertificateData,
-  CertificateRequest,
-  VaultRequestError,
-  VaultSecret,
-  VaultSecretRenewal,
-  VaultToken,
-  VaultKeys
-}
+import io.circe.syntax.*
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
-import io.circe.syntax._
-import org.http4s._
-import org.http4s.circe._
-import org.http4s.client._
-import org.http4s.implicits._
+import org.http4s.*
+import org.http4s.circe.*
+import org.http4s.client.*
+import org.http4s.implicits.*
 import org.typelevel.ci.CIString
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
+/** Helper methods for working with Vault
+  *
+  * @note
+  *   The implementations here are mostly correct (with the exception of
+  *   deprecated methods) however they do not handle token lifecycle or retries
+  *   (Vault is eventually consistent, and when inconsistency is detected, they
+  *   return `412 Precondition Failed` instead of the stale value).
+  *
+  * @note
+  *   Consider using the more modern [[VaultClient]] for better ergonomics,
+  *   lifecycle management, and retries.
+  */
 object Vault {
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
@@ -163,6 +167,34 @@ object Vault {
     }
   }
 
+  /** https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#delete-secret
+    */
+  def deleteSecret[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String,
+      secretPath: String
+  )(implicit F: Concurrent[F]): F[Unit] = {
+    val newSecretPath =
+      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
+    val request = Request[F](
+      method = Method.DELETE,
+      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
+      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+    )
+    client
+      .status(request)
+      .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
+      .handleErrorWith { e =>
+        F.raiseError(
+          VaultRequestError(
+            request,
+            e.some,
+            s"tokenLength=${token.length}".some
+          )
+        )
+      }
+      .void
+  }
+
   /** https://www.vaultproject.io/api/system/leases.html#renew-lease
     */
   def renewLease[F[_]](client: Client[F], vaultUri: Uri)(
@@ -198,37 +230,40 @@ object Vault {
     } yield renewal
   }
 
-  /** https://www.vaultproject.io/api/auth/token/index.html#renew-a-token-self-
+  /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
   def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken,
       newLeaseDuration: FiniteDuration
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-      headers =
-        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-    ).withEntity(
-      Json.obj(
-        ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
-      )
-    )
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(
-          VaultRequestError(
-            request,
-            e.some,
-            s"tokenLength=${token.clientToken.length}".some
-          )
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    if (!token.renewable)
+      new NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
+    else {
+      val request = Request[F](
+        method = Method.POST,
+        uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
+        headers =
+          Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+      ).withEntity(
+        Json.obj(
+          ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
         )
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
-        decoderError
       )
-    } yield token
-  }
+      for {
+        json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+          F.raiseError(
+            VaultRequestError(
+              request,
+              e.some,
+              s"tokenLength=${token.clientToken.length}".some
+            )
+          )
+        }
+        token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+          decoderError
+        )
+      } yield token
+    }
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
     */
@@ -342,9 +377,67 @@ object Vault {
     }
   }
 
-  /** This function logs in, requests a secret and then continually asks for a
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience or replace this with [[Vault.readSecret]].
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <h2>CAUTION: Vault secret leases</h2>
+    *
+    * This method fundamentally misunderstands how V1 secret leases work in
+    * Vault. They aren't leases which invalidate the secret when they expire,
+    * they're cache hints that suggest how long to wait before checking if the
+    * value has changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once.
+    *
+    * <hr/>
+    *
+    * This function logs in, requests a secret and then continually asks for a
     * duration extension of the lease after each waitInterval
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def keepLoginAndSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -372,6 +465,67 @@ object Vault {
       }
   }
 
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience or replace this with [[Vault.readSecret]].
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <h2>CAUTION: Vault secret leases</h2>
+    *
+    * This method fundamentally misunderstands how V1 secret leases work in
+    * Vault. They aren't leases which invalidate the secret when they expire,
+    * they're cache hints that suggest how long to wait before checking if the
+    * value has changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once.
+    *
+    * <hr/>
+    *
+    * This function logs in, requests a secret and then continually asks for a
+    * duration extension of the lease after each waitInterval
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -392,6 +546,67 @@ object Vault {
         )
       )
 
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience or replace this with [[Vault.readSecret]].
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <h2>CAUTION: Vault secret leases</h2>
+    *
+    * This method fundamentally misunderstands how V1 secret leases work in
+    * Vault. They aren't leases which invalidate the secret when they expire,
+    * they're cache hints that suggest how long to wait before checking if the
+    * value has changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once.
+    *
+    * <hr/>
+    *
+    * This function logs in, requests a secret and then continually asks for a
+    * duration extension of the lease after each waitInterval
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginK8sAndKeepSecretLeased[F[_]: Temporal, A: Decoder](
       client: Client[F],
       vaultUri: Uri
@@ -414,13 +629,57 @@ object Vault {
         )
       )
 
-  /** This function logs into the Vault server given by the vaultUri, to obtain
-    * a loginToken. It then also provides a Stream that continuously renews the
-    * token when it is about to finish.
-    *   - keeps the token constantly renewed
-    *   - Upon termination of the Stream (from the using application) revokes
-    *     the token. However, any error on revoking the token is ignored.
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience.
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <hr/>
+    *
+    * This function continually asks for a duration extension of the token after
+    * each waitInterval
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def keepLoginRenewed[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken,
       tokenLeaseExtension: FiniteDuration
@@ -451,6 +710,57 @@ object Vault {
     }
   }
 
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience.
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <hr/>
+    *
+    * This function logs in and then continually asks for a duration extension
+    * of the token after each waitInterval
+    */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def loginAndKeep[F[_]: Async](
       client: Client[F],
       vaultUri: Uri
@@ -461,12 +771,70 @@ object Vault {
         keepLoginRenewed[F](client, vaultUri)(token, tokenLeaseExtension)
       )
 
-  /** This function uses the given Vault client, uri, and authenticated token to
+  /** <h1>WARNING: This method is deeply flawed.</h1>
+    *
+    * Don't panic, and please migrate to [[VaultClient]] at your earliest
+    * convenience or replace this with [[Vault.readSecret]].
+    *
+    * <h2>CAUTION: `fs2.Stream` abuse</h2>
+    *
+    * `fs2.Stream` is entirely the wrong effect type to model what is happening
+    * here, because of this there was a long-standing bug where it could
+    * immediately revoke the token.
+    *
+    * There isn't really a fix for this, because the root issue is
+    * [[fs2.Stream.concurrently]] doesn't seem to compose with
+    * [[fs2.Stream.ToPull.uncons]]. This issue was noticed back in
+    * [[https://github.com/typelevel/fs2/issues/3123 February 2023]], and at
+    * time of writing is still open.
+    *
+    * <h3>Mitigation</h3>
+    *
+    * If possible, migrate to [[VaultClient]]. If this is not possible, try to
+    * avoid doing anything fancy to your [[fs2.Stream]] between when this method
+    * is called and when it is used.
+    *
+    * A non-comprehensive list of methods to avoid:
+    *
+    * <ul>
+    *
+    * <li>Any variation of [[fs2.Stream.ToPull.uncons]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.drop]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.take]]</li>
+    *
+    * <li>Any variation of [[fs2.Stream.hold]]</li>
+    *
+    * <li>[[fs2.Stream.resource]] and other methods which return a
+    * [[cats.effect.Resource]]</li>
+    *
+    * <li>[[fs2.Stream.drain]]</li>
+    *
+    * </ul>
+    *
+    * <h2>CAUTION: Vault secret leases</h2>
+    *
+    * This method fundamentally misunderstands how V1 secret leases work in
+    * Vault. They aren't leases which invalidate the secret when they expire,
+    * they're cache hints that suggest how long to wait before checking if the
+    * value has changed.
+    *
+    * There's no functional difference between using this method and simply
+    * reading the secret once.
+    *
+    * <hr/>
+    *
+    * This function uses the given Vault client, uri, and authenticated token to
     * obtain a secret from Vault. It then also provides a Stream that
     * continuously renews the lease on that secret, when it is about to finish.
     * Upon termination of the Stream (from the using application) revokes the
-    * token (but any error on revokation is ignored).
+    * token (but any error on revocation is ignored).
     */
+  @deprecated(
+    message = "Deprecated in favor of VaultClient, see scaladoc for details",
+    since = "9.3.0"
+  )
   def readSecretAndRetain[F[_], A: Decoder](
       client: Client[F],
       vaultUri: Uri,
@@ -538,5 +906,4 @@ object Vault {
     override def getMessage(): String =
       s"Token lease $leaseId could not be renewed any longer"
   }
-
 }

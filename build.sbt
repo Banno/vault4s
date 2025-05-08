@@ -1,14 +1,12 @@
-import laika.helium.Helium
-import laika.helium.config.HeliumIcon
-import laika.helium.config.IconLink
-import org.typelevel.sbt.gha.WorkflowStep._
+import laika.helium.config.{HeliumIcon, IconLink}
+import org.typelevel.sbt.gha.WorkflowStep.*
 import org.typelevel.sbt.site.GenericSiteSettings
 
 val Scala213 = "2.13.16"
 val Scala3 = "3.3.5"
 ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
-ThisBuild / tlBaseVersion := "9.2"
+ThisBuild / tlBaseVersion := "9.3"
 ThisBuild / tlSonatypeUseLegacyHost := true
 
 ThisBuild / githubWorkflowTargetBranches :=
@@ -70,7 +68,8 @@ lazy val commonSettings = Seq(
     "org.http4s" %% "http4s-dsl" % http4sV % Test,
     "org.typelevel" %% "munit-cats-effect" % munitCatsEffectV % Test,
     "org.scalameta" %% "munit-scalacheck" % munitScalaCheckV % Test,
-    "org.typelevel" %% "scalacheck-effect-munit" % scalacheckEffectV % Test
+    "org.typelevel" %% "scalacheck-effect-munit" % scalacheckEffectV % Test,
+    "org.typelevel" %% "cats-effect-testkit" % "3.6.0" % Test
   )
 )
 
