@@ -191,14 +191,12 @@ object VaultClient {
     Resource
       .make(login.flatMap(Ref[F].of(_)))(_.get.flatMap(revoke))
       .flatTap { vaultTokenRef =>
-        def keepRenewed: F[Unit] =
+        Async[F].background {
           vaultTokenRef.get
-            .flatMap { token =>
-              sleep(token) >> renew(token).flatMap(vaultTokenRef.set)
-            } >>
-            keepRenewed
-
-        Async[F].background(keepRenewed)
+            .flatMap(token => sleep(token) >> renew(token))
+            .flatMap(vaultTokenRef.set)
+            .foreverM
+        }
       }
       .map(ref => (ref: RefSource[F, VaultToken]).map(_.clientToken))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
