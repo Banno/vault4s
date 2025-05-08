@@ -62,10 +62,13 @@ object VaultConfig {
   ): VaultConfig.K8s =
     new K8sImpl(vaultUri, roleId, jwt, tokenLeaseExtension, mountPoint)
 
-  sealed trait AppRole extends VaultConfig
+  sealed trait AppRole extends VaultConfig {
+    override def withTokenLeaseExtension(extension: FiniteDuration): AppRole
+  }
   sealed trait K8s extends VaultConfig {
     def jwt: String
     def mountPoint: Uri.Path
+    override def withTokenLeaseExtension(extension: FiniteDuration): K8s
   }
 
   private final class AppRoleImpl(
@@ -75,7 +78,7 @@ object VaultConfig {
   ) extends AppRole {
     override def withTokenLeaseExtension(
         extension: FiniteDuration
-    ): VaultConfig =
+    ): AppRole =
       new AppRoleImpl(vaultUri, roleId, extension)
   }
 
@@ -88,7 +91,7 @@ object VaultConfig {
   ) extends K8s {
     override def withTokenLeaseExtension(
         extension: FiniteDuration
-    ): VaultConfig =
+    ): K8s =
       new K8sImpl(vaultUri, roleId, jwt, extension, mountPoint)
   }
 }
