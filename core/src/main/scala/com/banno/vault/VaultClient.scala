@@ -20,7 +20,7 @@ import cats.data.NonEmptyChain
 import cats.effect.kernel.{RefSource, Resource}
 import cats.effect.{Async, Ref}
 import cats.syntax.all.*
-import cats.{Applicative, ~>}
+import cats.{Applicative, NonEmptyParallel, ~>}
 import com.banno.vault.models.*
 import io.circe.{Decoder, Encoder}
 import org.http4s.client.{Client, UnexpectedStatus}
@@ -154,7 +154,7 @@ object VaultClient {
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
-  def loginAndKeep[F[_]: Async](
+  def loginAndKeep[F[_]: Async: NonEmptyParallel](
       client: Client[F],
       vaultConfig: VaultConfig,
       consistencyConfig: ConsistencyConfig
@@ -179,10 +179,21 @@ object VaultClient {
       if (token.renewable)
         renewWithRetry(token, client, vaultConfig, consistencyConfig)
           .recoverWith { case vre: VaultRequestError =>
-            (revoke(token) *> login).adaptErr {
-              case e if !(vre eq e) =>
-                vre.addSuppressed(e)
-                vre
+            (revoke(token).attempt, login.attempt).parFlatMapN {
+              case (_, Right(token)) => token.pure[F]
+              case (Right(_), Left(loginError)) =>
+                if (!(vre eq loginError)) {
+                  vre.addSuppressed(loginError)
+                }
+                loginError.raiseError[F, VaultToken]
+              case (Left(revokeError), Left(loginError)) =>
+                if (!(vre eq revokeError)) {
+                  vre.addSuppressed(revokeError)
+                }
+                if (!(vre eq loginError)) {
+                  vre.addSuppressed(loginError)
+                }
+                loginError.raiseError[F, VaultToken]
             }
           }
       else
