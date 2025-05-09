@@ -6,7 +6,7 @@ val Scala213 = "2.13.16"
 val Scala3 = "3.3.5"
 ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
-ThisBuild / tlBaseVersion := "9.3"
+ThisBuild / tlBaseVersion := "9.4"
 ThisBuild / tlSonatypeUseLegacyHost := true
 
 ThisBuild / githubWorkflowTargetBranches :=
@@ -33,7 +33,7 @@ lazy val core = project
     name := "vault4s",
     mimaBinaryIssueFilters ++= {
       import com.typesafe.tools.mima.core.IncompatibleSignatureProblem
-      import com.typesafe.tools.mima.core.ProblemFilters.exclude
+        import com.typesafe.tools.mima.core.ProblemFilters.exclude
       // See https://github.com/lightbend/mima/issues/423
       Seq(
       )
