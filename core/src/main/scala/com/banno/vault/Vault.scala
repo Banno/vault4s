@@ -108,6 +108,25 @@ object Vault {
   )(implicit F: Concurrent[F]): F[VaultToken] =
     loginKubernetes(client, vaultUri)(role, jwt)
 
+  /** https://developer.hashicorp.com/vault/docs/auth/github
+    */
+  def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "github" / "login"
+    ).withEntity(Json.obj(("token", Json.fromString(token))))
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(VaultRequestError(request, e.some, none))
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
   def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(

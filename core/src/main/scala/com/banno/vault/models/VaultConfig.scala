@@ -22,7 +22,7 @@ import scala.concurrent.duration.FiniteDuration
 
 sealed trait VaultConfig {
   def vaultUri: Uri
-  def roleId: String
+  protected def roleId: String
   def tokenLeaseExtension: FiniteDuration
 
   def withTokenLeaseExtension(extension: FiniteDuration): VaultConfig
@@ -62,13 +62,26 @@ object VaultConfig {
   ): VaultConfig.K8s =
     new K8sImpl(vaultUri, roleId, jwt, tokenLeaseExtension, mountPoint)
 
+  def gitHub(
+      vaultUri: Uri,
+      gitHubToken: String,
+      tokenLeaseExtension: FiniteDuration
+  ): VaultConfig.GitHub =
+    new GitHubImpl(vaultUri, gitHubToken, tokenLeaseExtension)
+
   sealed trait AppRole extends VaultConfig {
+    override def roleId: String
     override def withTokenLeaseExtension(extension: FiniteDuration): AppRole
   }
   sealed trait K8s extends VaultConfig {
+    override def roleId: String
     def jwt: String
     def mountPoint: Uri.Path
     override def withTokenLeaseExtension(extension: FiniteDuration): K8s
+  }
+  sealed trait GitHub extends VaultConfig {
+    def gitHubToken: String
+    override def withTokenLeaseExtension(extension: FiniteDuration): GitHub
   }
 
   private final class AppRoleImpl(
@@ -93,5 +106,18 @@ object VaultConfig {
         extension: FiniteDuration
     ): K8s =
       new K8sImpl(vaultUri, roleId, jwt, extension, mountPoint)
+  }
+
+  private final class GitHubImpl(
+      override val vaultUri: Uri,
+      override val gitHubToken: String,
+      override val tokenLeaseExtension: FiniteDuration
+  ) extends GitHub {
+    override def withTokenLeaseExtension(
+        extension: FiniteDuration
+    ): GitHub =
+      new GitHubImpl(vaultUri, roleId, extension)
+
+    override protected def roleId: String = gitHubToken
   }
 }

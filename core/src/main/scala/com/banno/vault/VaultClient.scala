@@ -247,6 +247,8 @@ object VaultClient {
             k8s.jwt,
             k8s.mountPoint
           )
+        case gitHub: VaultConfig.GitHub =>
+          Vault.loginGitHub(client, gitHub.vaultUri)(gitHub.gitHubToken)
       }
     )
 

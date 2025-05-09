@@ -28,13 +28,15 @@ import com.banno.vault.models.{
   VaultSecretRenewal,
   VaultToken
 }
-import io.circe.{Codec, Decoder}
+import io.circe.{Codec, Decoder, Json}
+import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.implicits.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
 import org.http4s.circe.*
 import org.http4s.client.Client
+import org.http4s.DecodeFailure
 
 import scala.concurrent.duration.*
 import munit.{CatsEffectSuite, ScalaCheckEffectSuite}
@@ -63,6 +65,12 @@ class VaultSpec
   object RoleAndJwt {
     implicit val decoder: Decoder[RoleAndJwt] =
       Decoder.forProduct2("role", "jwt")(RoleAndJwt.apply)
+  }
+
+  case class GitHubToken(token: String)
+  object GitHubToken {
+    implicit val decoder: Decoder[GitHubToken] =
+      Decoder[String].at("token").map(GitHubToken(_))
   }
 
   case class VaultValue(value: String)
@@ -140,8 +148,8 @@ class VaultSpec
       .take(20)
       .mkString // simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
 
+  val validGitHubToken: String = UUID.randomUUID().toString
   val clientToken: String = UUID.randomUUID().toString
-  val altClientToken: String = UUID.randomUUID().toString
   val leaseDuration: Long = Random.nextLong()
   val leaseId: String = UUID.randomUUID().toString
   val renewable: Boolean = Random.nextBoolean()
@@ -156,7 +164,8 @@ class VaultSpec
   val generateCertsPath: String = "pki/issue/ip"
 
   val validToken = VaultToken(clientToken, leaseDuration, renewable)
-  val altValidToken = VaultToken(altClientToken, leaseDuration, renewable)
+  val altValidToken =
+    VaultToken(UUID.randomUUID().toString, leaseDuration, renewable)
 
   def mockVaultService[F[_]: Concurrent]: HttpRoutes[F] = {
     object dsl extends Http4sDsl[F]
@@ -167,6 +176,32 @@ class VaultSpec
 
     def checkVaultToken(req: Request[F])(resp: F[Response[F]]): F[Response[F]] =
       if (findVaultToken(req).contains(clientToken)) resp else BadRequest("")
+
+    def standardLoginResponses(identifier: String)(
+        valid: (String, VaultToken),
+        invalidJson: String,
+        missingToken: String,
+        missingLease: String
+    ): F[Response[F]] = identifier match {
+      case valid._1      => Ok(Json.obj("auth" := valid._2).noSpaces)
+      case `invalidJson` => Ok(s""" NOT A JSON """)
+      case `missingToken` =>
+        Ok(s"""
+              |{
+              | "auth": {
+              |   "lease_duration": $leaseDuration
+              | }
+              |}""".stripMargin)
+      case `missingLease` =>
+        Ok(s"""
+              |{
+              | "auth": {
+              |   "client_token": "$clientToken"
+              | }
+              |}""".stripMargin)
+      case _ =>
+        BadRequest("")
+    }
 
     HttpRoutes.of[F] {
       case req @ POST -> Root / "v1" / "auth" / "token" / "renew-self" =>
@@ -197,79 +232,42 @@ class VaultSpec
         checkVaultToken(req)(NoContent())
 
       case req @ POST -> Root / "v1" / "auth" / "approle" / "login" =>
-        req.decodeJson[RoleId].flatMap {
-          case RoleId(`validRoleId`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "client_token": "$clientToken",
-                  |   "lease_duration": $leaseDuration,
-                  |   "renewable": $renewable
-                  | }
-                  |}""".stripMargin)
-          case RoleId(`invalidJSONRoleId`) =>
-            Ok(s""" NOT A JSON """)
-          case RoleId(`roleIdWithoutToken`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "lease_duration": $leaseDuration
-                  | }
-                  |}""".stripMargin)
-          case RoleId(`roleIdWithoutLease`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "client_token": "$clientToken"
-                  | }
-                  |}""".stripMargin)
-          case _ =>
-            BadRequest("")
+        req.decodeJson[RoleId].flatMap { roleId =>
+          standardLoginResponses(roleId.role_id)(
+            valid = validRoleId -> validToken,
+            invalidJson = invalidJSONRoleId,
+            missingToken = roleIdWithoutToken,
+            missingLease = roleIdWithoutLease
+          )
         }
       case req @ POST -> Root / "v1" / "auth" / "kubernetes" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
-          case RoleAndJwt(`validKubernetesRole`, `validKubernetesJwt`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "client_token": "$clientToken",
-                  |   "lease_duration": $leaseDuration,
-                  |   "renewable": $renewable
-                  | }
-                  |}""".stripMargin)
-          case RoleAndJwt(`invalidJSONRoleId`, `validKubernetesJwt`) =>
-            Ok(s""" NOT A JSON """)
-          case RoleAndJwt(`roleIdWithoutToken`, `validKubernetesJwt`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "lease_duration": $leaseDuration
-                  | }
-                  |}""".stripMargin)
-          case RoleAndJwt(`roleIdWithoutLease`, `validKubernetesJwt`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "client_token": "$clientToken"
-                  | }
-                  |}""".stripMargin)
-          case _ =>
-            BadRequest("")
+          case RoleAndJwt(k8sRole, `validKubernetesJwt`) =>
+            standardLoginResponses(k8sRole)(
+              valid = validKubernetesRole -> validToken,
+              invalidJson = invalidJSONRoleId,
+              missingToken = roleIdWithoutToken,
+              missingLease = roleIdWithoutLease
+            )
+          case _ => BadRequest("")
         }
       case req @ POST -> Root / "v1" / "auth" / "kubernetes2" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
           case RoleAndJwt(`validKubernetesRole`, `validKubernetesJwt`) =>
-            Ok(s"""
-                  |{
-                  | "auth": {
-                  |   "client_token": "$altClientToken",
-                  |   "lease_duration": $leaseDuration,
-                  |   "renewable": $renewable
-                  | }
-                  |}""".stripMargin)
-          case _ =>
-            BadRequest("")
+            Ok(Json.obj("auth" := altValidToken).noSpaces)
+          case _ => BadRequest("")
         }
+
+      case req @ POST -> Root / "v1" / "auth" / "github" / "login" =>
+        req.decodeJson[GitHubToken].flatMap { gitHubToken =>
+          standardLoginResponses(gitHubToken.token)(
+            valid = validGitHubToken -> validToken,
+            invalidJson = invalidJSONRoleId,
+            missingToken = roleIdWithoutToken,
+            missingLease = roleIdWithoutLease
+          )
+        }
+
       case req @ GET -> Root / "v1" / "secret" / "postgres1" / "password" =>
         checkVaultToken(req) {
           Ok(s"""
@@ -411,7 +409,6 @@ class VaultSpec
 
   test("login should fail when the response doesn't contains a token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      import org.http4s.DecodeFailure
       Vault
         .login(mockClient, uri)(roleIdWithoutToken)
         .attempt
@@ -424,7 +421,6 @@ class VaultSpec
     "login should fail when the response doesn't contains a lease duration"
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      import org.http4s.DecodeFailure
       Vault
         .login(mockClient, uri)(roleIdWithoutLease)
         .attempt
@@ -483,7 +479,6 @@ class VaultSpec
     "loginKubernetes should fail when the response doesn't contains a token"
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      import org.http4s.DecodeFailure
       Vault
         .loginKubernetes(mockClient, uri)(
           roleIdWithoutToken,
@@ -499,12 +494,61 @@ class VaultSpec
     "loginKubernetes should fail when the response doesn't contains a lease duration"
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      import org.http4s.DecodeFailure
       Vault
         .loginKubernetes(mockClient, uri)(
           roleIdWithoutLease,
           validKubernetesJwt
         )
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test("loginGitHub works as expected when sending a valid GitHub token") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginGitHub(mockClient, uri)(validGitHubToken)
+        .assertEquals(validToken)
+    }
+  }
+
+  test("loginGitHub should fail when sending an invalid GitHub token") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginGitHub(mockClient, uri)(UUID.randomUUID().toString)
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginGitHub should fail when the response is not a valid") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginGitHub(mockClient, uri)(invalidJSONRoleId)
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginGitHub should fail when the response doesn't contains a token") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginGitHub(mockClient, uri)(roleIdWithoutToken)
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test(
+    "loginGitHub should fail when the response doesn't contains a lease duration"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginGitHub(mockClient, uri)(roleIdWithoutLease)
         .attempt
         .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
         .assertEquals(Left(true))
