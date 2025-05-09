@@ -77,6 +77,19 @@ object VaultConfig {
   ): VaultConfig.GitHub =
     new GitHubImpl(vaultUri, gitHubToken, tokenLeaseExtension)
 
+  def usernameAndPassword(
+      vaultUri: Uri,
+      username: String,
+      password: String,
+      tokenLeaseExtension: FiniteDuration
+  ): VaultConfig.UsernameAndPassword =
+    new UsernameAndPasswordImpl(
+      vaultUri,
+      username,
+      password,
+      tokenLeaseExtension
+    )
+
   sealed trait AppRole extends VaultConfig {
     override def roleId: String
     def secretId: Option[String] = None
