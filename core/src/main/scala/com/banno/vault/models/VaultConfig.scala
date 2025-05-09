@@ -120,6 +120,13 @@ object VaultConfig {
       override val secretId: Option[String],
       override val tokenLeaseExtension: FiniteDuration
   ) extends AppRole {
+    def this(
+        _vaultUri: Uri,
+        _roleId: String,
+        _tokenLeaseExtension: FiniteDuration
+    ) =
+      this(_vaultUri, _roleId, None, _tokenLeaseExtension)
+
     override def withTokenLeaseExtension(
         extension: FiniteDuration
     ): AppRole =
