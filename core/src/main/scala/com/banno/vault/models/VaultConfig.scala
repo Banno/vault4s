@@ -92,6 +92,14 @@ object VaultConfig {
     def gitHubToken: String
     override def withTokenLeaseExtension(extension: FiniteDuration): GitHub
   }
+  sealed trait UsernameAndPassword extends VaultConfig {
+    def username: String
+    def password: String
+
+    override def withTokenLeaseExtension(
+        extension: FiniteDuration
+    ): UsernameAndPassword
+  }
 
   private final class AppRoleImpl(
       override val vaultUri: Uri,
@@ -129,5 +137,19 @@ object VaultConfig {
       new GitHubImpl(vaultUri, roleId, extension)
 
     override protected def roleId: String = gitHubToken
+  }
+
+  private final class UsernameAndPasswordImpl(
+      override val vaultUri: Uri,
+      override val username: String,
+      override val password: String,
+      override val tokenLeaseExtension: FiniteDuration
+  ) extends UsernameAndPassword {
+    override def withTokenLeaseExtension(
+        extension: FiniteDuration
+    ): UsernameAndPassword =
+      new UsernameAndPasswordImpl(vaultUri, username, password, extension)
+
+    override protected def roleId: String = username
   }
 }

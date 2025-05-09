@@ -256,6 +256,8 @@ object VaultClient {
           )
         case gitHub: VaultConfig.GitHub =>
           Vault.loginGitHub(client, gitHub.vaultUri)(gitHub.gitHubToken)
+        case uap: VaultConfig.UsernameAndPassword =>
+          Vault.loginUserPass(client, uap.vaultUri)(uap.username, uap.username)
       }
     )
 

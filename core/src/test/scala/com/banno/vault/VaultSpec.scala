@@ -76,6 +76,12 @@ class VaultSpec
       Decoder[String].at("token").map(GitHubToken(_))
   }
 
+  case class Password(password: String)
+  object Password {
+    implicit val decoder: Decoder[Password] =
+      Decoder[String].at("password").map(Password(_))
+  }
+
   case class VaultValue(value: String)
   object VaultValue {
     implicit val vaultValueDecoder: Decoder[VaultValue] =
@@ -153,6 +159,10 @@ class VaultSpec
       .mkString // simulate a signed jwt https://www.vaultproject.io/api/auth/kubernetes/index.html#login
 
   val validGitHubToken: String = UUID.randomUUID().toString
+
+  val validUsername: String = UUID.randomUUID().toString
+  val validPassword: String = UUID.randomUUID().toString
+
   val clientToken: String = UUID.randomUUID().toString
   val leaseDuration: Long = Random.nextLong()
   val leaseId: String = UUID.randomUUID().toString
@@ -279,6 +289,18 @@ class VaultSpec
             missingToken = roleIdWithoutToken,
             missingLease = roleIdWithoutLease
           )
+        }
+
+      case req @ POST -> Root / "v1" / "auth" / "userpass" / "login" / username =>
+        req.decodeJson[Password].flatMap {
+          case Password(`validPassword`) =>
+            standardLoginResponses(username)(
+              valid = validUsername -> validToken,
+              invalidJson = invalidJSONRoleId,
+              missingToken = roleIdWithoutToken,
+              missingLease = roleIdWithoutLease
+            )
+          case _ => BadRequest("")
         }
 
       case req @ GET -> Root / "v1" / "secret" / "postgres1" / "password" =>
@@ -643,6 +665,74 @@ class VaultSpec
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .loginGitHub(mockClient, uri)(roleIdWithoutLease)
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test(
+    "loginUserPass works as expected when sending a valid username and password"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(validUsername, validPassword)
+        .assertEquals(validToken)
+    }
+  }
+
+  test("loginUserPass should fail when sending an invalid username") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          UUID.randomUUID().toString,
+          validPassword
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginUserPass should fail when sending an invalid password") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(
+          validUsername,
+          UUID.randomUUID().toString
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginUserPass should fail when the response is not valid JSON") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(invalidJSONRoleId, validPassword)
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginUserPass should fail when the response doesn't contains a token") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(roleIdWithoutToken, validPassword)
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test(
+    "loginUserPass should fail when the response doesn't contains a lease duration"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginUserPass(mockClient, uri)(roleIdWithoutLease, validPassword)
         .attempt
         .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
         .assertEquals(Left(true))

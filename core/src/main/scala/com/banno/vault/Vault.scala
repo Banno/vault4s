@@ -158,6 +158,28 @@ object Vault {
     } yield token
   }
 
+  /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
+    */
+  def loginUserPass[F[_]](client: Client[F], vaultUri: Uri)(
+      username: String,
+      password: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "userpass" / "login" / username
+    ).withEntity(Json.obj("password" := password))
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(
+          VaultRequestError(request, e.some, s"username=$username".some)
+        )
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
   def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(
