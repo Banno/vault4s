@@ -240,7 +240,14 @@ object VaultClient {
       leaseConfig,
       vaultConfig match {
         case role: VaultConfig.AppRole =>
-          Vault.login(client, role.vaultUri)(role.roleId)
+          role.secretId match {
+            case None => Vault.login(client, role.vaultUri)(role.roleId)
+            case Some(secretId) =>
+              Vault.loginAppRoleAndSecretId(client, role.vaultUri)(
+                role.roleId,
+                secretId
+              )
+          }
         case k8s: VaultConfig.K8s =>
           Vault.loginKubernetes(client, k8s.vaultUri)(
             k8s.roleId,

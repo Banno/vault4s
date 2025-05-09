@@ -64,6 +64,37 @@ object Vault {
     } yield token
   }
 
+  /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+    */
+  def loginAppRoleAndSecretId[F[_]](client: Client[F], vaultUri: Uri)(
+      roleId: String,
+      secretId: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "approle" / "login"
+    ).withEntity(
+      Json.obj(
+        "role_id" := roleId,
+        "secret_id" := secretId
+      )
+    )
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(
+          VaultRequestError(
+            request,
+            e.some,
+            s"roleId=$roleId, secretId=XXXX".some
+          )
+        )
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     *
     * @param mountPoint

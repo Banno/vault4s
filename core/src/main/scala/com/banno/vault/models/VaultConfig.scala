@@ -33,7 +33,15 @@ object VaultConfig {
       roleId: String,
       tokenLeaseExtension: FiniteDuration
   ): VaultConfig.AppRole =
-    new AppRoleImpl(vaultUri, roleId, tokenLeaseExtension)
+    new AppRoleImpl(vaultUri, roleId, None, tokenLeaseExtension)
+
+  def appRole(
+      vaultUri: Uri,
+      roleId: String,
+      secretId: String,
+      tokenLeaseExtension: FiniteDuration
+  ): VaultConfig.AppRole =
+    new AppRoleImpl(vaultUri, roleId, Some(secretId), tokenLeaseExtension)
 
   def k8s(
       vaultUri: Uri,
@@ -71,6 +79,7 @@ object VaultConfig {
 
   sealed trait AppRole extends VaultConfig {
     override def roleId: String
+    def secretId: Option[String] = None
     override def withTokenLeaseExtension(extension: FiniteDuration): AppRole
   }
   sealed trait K8s extends VaultConfig {
@@ -87,12 +96,13 @@ object VaultConfig {
   private final class AppRoleImpl(
       override val vaultUri: Uri,
       override val roleId: String,
+      override val secretId: Option[String],
       override val tokenLeaseExtension: FiniteDuration
   ) extends AppRole {
     override def withTokenLeaseExtension(
         extension: FiniteDuration
     ): AppRole =
-      new AppRoleImpl(vaultUri, roleId, extension)
+      new AppRoleImpl(vaultUri, roleId, secretId, extension)
   }
 
   private final class K8sImpl(

@@ -53,11 +53,14 @@ class VaultSpec
     with ScalaCheckEffectSuite
     with MissingPieces {
 
-  case class RoleId(role_id: String)
+  case class RoleId(role_id: String, secret_id: Option[String])
   object RoleId {
     implicit val roleIdDecoder: Decoder[RoleId] = Decoder.instance[RoleId] {
       c =>
-        Decoder.resultInstance.map(c.downField("role_id").as[String])(RoleId(_))
+        (
+          c.downField("role_id").as[String],
+          c.downField("secret_id").as[Option[String]]
+        ).mapN(RoleId.apply)
     }
   }
 
@@ -138,6 +141,7 @@ class VaultSpec
   val serial_number: String = UUID.randomUUID().toString
 
   val validRoleId: String = UUID.randomUUID().toString
+  val validSecretId: String = UUID.randomUUID().toString
   val invalidJSONRoleId: String = UUID.randomUUID().toString
   val roleIdWithoutToken: String = UUID.randomUUID().toString
   val roleIdWithoutLease: String = UUID.randomUUID().toString
@@ -232,13 +236,22 @@ class VaultSpec
         checkVaultToken(req)(NoContent())
 
       case req @ POST -> Root / "v1" / "auth" / "approle" / "login" =>
-        req.decodeJson[RoleId].flatMap { roleId =>
-          standardLoginResponses(roleId.role_id)(
-            valid = validRoleId -> validToken,
-            invalidJson = invalidJSONRoleId,
-            missingToken = roleIdWithoutToken,
-            missingLease = roleIdWithoutLease
-          )
+        req.decodeJson[RoleId].flatMap {
+          case RoleId(role_id, None) =>
+            standardLoginResponses(role_id)(
+              valid = validRoleId -> validToken,
+              invalidJson = invalidJSONRoleId,
+              missingToken = roleIdWithoutToken,
+              missingLease = roleIdWithoutLease
+            )
+          case RoleId(role_id, Some(`validSecretId`)) =>
+            standardLoginResponses(role_id)(
+              valid = validRoleId -> altValidToken,
+              invalidJson = invalidJSONRoleId,
+              missingToken = roleIdWithoutToken,
+              missingLease = roleIdWithoutLease
+            )
+          case _ => BadRequest("")
         }
       case req @ POST -> Root / "v1" / "auth" / "kubernetes" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
@@ -397,7 +410,7 @@ class VaultSpec
     }
   }
 
-  test("login should fail when the response is not a valid") {
+  test("login should fail when the response is not valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .login(mockClient, uri)(invalidJSONRoleId)
@@ -423,6 +436,87 @@ class VaultSpec
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .login(mockClient, uri)(roleIdWithoutLease)
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test(
+    "loginAppRoleAndSecretId works as expected when sending a valid roleId and secretId"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(validRoleId, validSecretId)
+        .assertEquals(altValidToken)
+    }
+  }
+
+  test("loginAppRoleAndSecretId should fail when sending an invalid roleId") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(
+          UUID.randomUUID().toString,
+          validSecretId
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test("loginAppRoleAndSecretId should fail when sending an invalid secretId") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(
+          validRoleId,
+          UUID.randomUUID().toString
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test(
+    "loginAppRoleAndSecretId should fail when the response is not valid JSON"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(
+          invalidJSONRoleId,
+          validSecretId
+        )
+        .attempt
+        .map(_.isLeft)
+        .assert
+    }
+  }
+
+  test(
+    "loginAppRoleAndSecretId should fail when the response doesn't contains a token"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(
+          roleIdWithoutToken,
+          validSecretId
+        )
+        .attempt
+        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
+        .assertEquals(Left(true))
+    }
+  }
+
+  test(
+    "loginAppRoleAndSecretId should fail when the response doesn't contains a lease duration"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .loginAppRoleAndSecretId(mockClient, uri)(
+          roleIdWithoutLease,
+          validSecretId
+        )
         .attempt
         .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
         .assertEquals(Left(true))
