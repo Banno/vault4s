@@ -64,6 +64,37 @@ object Vault {
     } yield token
   }
 
+  /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+    */
+  def loginAppRoleAndSecretId[F[_]](client: Client[F], vaultUri: Uri)(
+      roleId: String,
+      secretId: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "approle" / "login"
+    ).withEntity(
+      Json.obj(
+        "role_id" := roleId,
+        "secret_id" := secretId
+      )
+    )
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(
+          VaultRequestError(
+            request,
+            e.some,
+            s"roleId=$roleId, secretId=XXXX".some
+          )
+        )
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     *
     * @param mountPoint
@@ -107,6 +138,47 @@ object Vault {
       jwt: String
   )(implicit F: Concurrent[F]): F[VaultToken] =
     loginKubernetes(client, vaultUri)(role, jwt)
+
+  /** https://developer.hashicorp.com/vault/docs/auth/github
+    */
+  def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "github" / "login"
+    ).withEntity(Json.obj(("token", Json.fromString(token))))
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(VaultRequestError(request, e.some, none))
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
+
+  /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
+    */
+  def loginUserPass[F[_]](client: Client[F], vaultUri: Uri)(
+      username: String,
+      password: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "userpass" / "login" / username
+    ).withEntity(Json.obj("password" := password))
+    for {
+      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
+        F.raiseError(
+          VaultRequestError(request, e.some, s"username=$username".some)
+        )
+      }
+      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
+        decoderError
+      )
+    } yield token
+  }
 
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
