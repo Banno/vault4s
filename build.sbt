@@ -33,7 +33,7 @@ lazy val core = project
     name := "vault4s",
     mimaBinaryIssueFilters ++= {
       import com.typesafe.tools.mima.core.IncompatibleSignatureProblem
-        import com.typesafe.tools.mima.core.ProblemFilters.exclude
+      import com.typesafe.tools.mima.core.ProblemFilters.exclude
       // See https://github.com/lightbend/mima/issues/423
       Seq(
       )
