@@ -9,7 +9,8 @@ ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
 ThisBuild / tlBaseVersion := "9.3"
 ThisBuild / sonatypeCredentialHost := sonatypeCentralHost
-
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
+ThisBuild / tlJdkRelease := Some(8)
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
