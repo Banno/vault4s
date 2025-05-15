@@ -36,7 +36,6 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
 import org.http4s.circe.*
 import org.http4s.client.Client
-import org.http4s.DecodeFailure
 
 import scala.concurrent.duration.*
 import munit.{CatsEffectSuite, ScalaCheckEffectSuite}
