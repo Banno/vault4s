@@ -305,7 +305,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultClient.logAndKeep will retry when a 412 is returned") {
+  test("VaultClient.loginAndKeep will retry when a 412 is returned") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
@@ -340,7 +340,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultClient.logAndKeep will respect the 412 retry limit") {
+  test("VaultClient.loginAndKeep will respect the 412 retry limit") {
     val program =
       for {
         _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
@@ -553,6 +553,202 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
               path"/v1/secret/foo",
               s"$roleLogId token 2",
               path"foo"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 2"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test("VaultClient#readSecretAndKeep won't revoke the secret prematurely") {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(
+            role :: Nil,
+            Json.fromInt(5),
+            Option(
+              LeaseTemplate.renewable(2.minutes)
+            )
+          )
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .flatMap(_.readSecretAndRenewLease[Int]("secret/foo", 1.minute))
+            .use(s =>
+              IO.sleep(30.seconds) *>
+                mockService.logs
+                  .map(_.collect { case _: LeaseRevoked => true })
+                  .assertEquals(List.empty) *>
+                s.pure[IO]
+            )
+            .assertEquals(5)
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path = path"/v1/secret/foo",
+              token = "k8s:jDoe token 0",
+              leaseId = "k8s:jDoe lease 0"
+            ),
+            LeaseRevoked(
+              path = path"/v1/sys/leases/revoke",
+              token = "k8s:jDoe token 0",
+              leaseId = "k8s:jDoe lease 0"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test("VaultClient#readSecretAndKeep will renew the secret lease".only) {
+    val program =
+      for {
+        _ <- mockService.addRoles(
+          role -> LeaseTemplate.renewable(
+            duration = 2.minute,
+            maxDuration = 10.minutes
+          )
+        )
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(
+            role :: Nil,
+            Json.fromInt(5),
+            Option(LeaseTemplate.renewable(1.minutes))
+          )
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .use { vault =>
+              vault
+                .readSecretAndRenewLease[Int]("secret/foo", 1.minute)
+                .use { secret =>
+                  IO.pure(secret).assertEquals(5) *>
+                    IO.sleep(5.minute)
+                }
+            }
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path = path"/v1/secret/foo",
+              token = "k8s:jDoe token 0",
+              leaseId = "k8s:jDoe lease 0"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            LeaseRevoked(
+              path = path"/v1/sys/leases/revoke",
+              token = "k8s:jDoe token 0",
+              leaseId = "k8s:jDoe lease 0"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test(
+    "VaultClient#readSecretAndKeep will get a new token if the token cannot be renewed".ignore
+  ) {
+    val program =
+      for {
+        _ <- mockService.addRoles(
+          role -> LeaseTemplate.renewable(
+            duration = 1.minute,
+            maxDuration = 3.minutes
+          )
+        )
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig.withTokenLeaseExtension(1.minute),
+              consistencyConfig
+            )
+            .use(_ => IO.sleep(30.seconds) *> IO.sleep(7.minutes))
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 1"),
+            TokenExpired(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 1"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 1"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 1"
+            ),
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 2"),
+            TokenExpired(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 1"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 2"
             ),
             TokenRevoked(
               path"/v1/auth/token/revoke-self",

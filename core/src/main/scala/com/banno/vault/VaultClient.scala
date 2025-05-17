@@ -18,7 +18,8 @@ package com.banno.vault
 
 import cats.data.NonEmptyChain
 import cats.effect.kernel.{RefSource, Resource}
-import cats.effect.{Async, Ref}
+import cats.effect.{Async, Ref, MonadCancelThrow}
+import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import cats.{Applicative, NonEmptyParallel, ~>}
 import com.banno.vault.models.*
@@ -27,6 +28,7 @@ import org.http4s.client.{Client, UnexpectedStatus}
 import org.http4s.{Status, Uri}
 
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
+import com.banno.vault.Vault.revokeLease
 
 /** An alternative to [[Vault]] that keeps track of the client, vault URI, and
   * client taken, as well as handling token renewal and retries.
@@ -202,12 +204,11 @@ object VaultClient {
     Resource
       .make(login.flatMap(Ref[F].of(_)))(_.get.flatMap(revoke))
       .flatTap { vaultTokenRef =>
-        Async[F].background {
-          vaultTokenRef.get
-            .flatMap(token => sleep(token) >> renew(token))
-            .flatMap(vaultTokenRef.set)
-            .foreverM
-        }
+        vaultTokenRef.get
+          .flatMap(token => sleep(token) >> renew(token))
+          .flatMap(vaultTokenRef.set)
+          .foreverM
+          .background
       }
       .map(ref => (ref: RefSource[F, VaultToken]).map(_.clientToken))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
@@ -441,5 +442,63 @@ object VaultClient {
         Some(vre)
       case _ => None
     }
+  }
+
+  implicit class VaultClientExtensions[F[_]](private val vc: VaultClient[F])
+      extends AnyVal {
+
+    /** Similar to [[readSecret]] but calls [[renewLease]] on a schedule to keep
+      * the secret renewed until the resource is closed IF the secret is
+      * renewable.
+      *
+      * @see
+      *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+      */
+    def readSecretAndRenewLease[A: Decoder](
+        secretPath: String,
+        leaseDuration: FiniteDuration
+    )(implicit F: Async[F], c: cats.effect.std.Console[F]): Resource[F, A] = {
+      Resource.eval(
+        cats.effect.std
+          .Console[F]
+          .println(s"********** TEST Started")
+      ) *>
+        Resource
+          .eval(vc.readSecret[A](secretPath))
+          .flatTap { secret =>
+            def sleep(renewal: VaultSecretRenewal): F[Unit] = {
+              val waitInterval: Long =
+                Math.min(
+                  renewal.leaseDuration,
+                  leaseDuration.toSeconds
+                ) * 9 / 10
+
+              Async[F].sleep(waitInterval.seconds)
+            }
+
+            def revoke(renewal: VaultSecretRenewal): F[Unit] =
+              vc.revokeLease(renewal.leaseId)
+
+            secret.renewal.traverse { renewal =>
+              Resource
+                .make(Ref.of(renewal))(_.get.flatMap(revoke))
+                .flatTap { ref =>
+                  ref.get
+                    .flatMap { renewal =>
+                      cats.effect.std
+                        .Console[F]
+                        .println(s"********** TEST RENEWAL: ${renewal}")
+                      sleep(renewal) *>
+                        vc.renewLease(renewal.leaseId, leaseDuration)
+                          .flatTap(ref.set)
+                    }
+                    .foreverM
+                    .background
+                }
+            }
+          }
+          .map(_.data)
+    }
+
   }
 }
