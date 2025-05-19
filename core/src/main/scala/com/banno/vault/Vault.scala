@@ -452,7 +452,7 @@ object Vault {
   /** <h1>WARNING: This method is deeply flawed.</h1>
     *
     * Don't panic, and please migrate to [[VaultClient]] at your earliest
-    * convenience or replace this with [[Vault.readSecret]].
+    * convenience.
     *
     * <h2>CAUTION: `fs2.Stream` abuse</h2>
     *
@@ -491,15 +491,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -579,15 +585,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -660,15 +672,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -885,15 +903,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
