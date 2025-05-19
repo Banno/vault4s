@@ -23,7 +23,9 @@ import cats.implicits.*
 import com.banno.vault.models.{
   CertificateData,
   CertificateRequest,
+  VaultApiError,
   VaultKeys,
+  VaultRequestError,
   VaultSecret,
   VaultSecretRenewal,
   VaultToken
@@ -176,8 +178,8 @@ class VaultSpec
   val secretPrivateKeyPath: String = "secret/data-services/private-key"
   val generateCertsPath: String = "pki/issue/ip"
 
-  val validToken = VaultToken(clientToken, leaseDuration, renewable)
-  val altValidToken =
+  val validToken: VaultToken = VaultToken(clientToken, leaseDuration, renewable)
+  val altValidToken: VaultToken =
     VaultToken(UUID.randomUUID().toString, leaseDuration, renewable)
 
   def mockVaultService[F[_]: Concurrent]: HttpRoutes[F] = {
@@ -188,7 +190,8 @@ class VaultSpec
       req.headers.get(CIString("X-Vault-Token")).map(_.head.value)
 
     def checkVaultToken(req: Request[F])(resp: F[Response[F]]): F[Response[F]] =
-      if (findVaultToken(req).contains(clientToken)) resp else BadRequest("")
+      if (findVaultToken(req).contains(clientToken)) resp
+      else BadRequest(Json.obj("errors" := List("Invalid Token")))
 
     def standardLoginResponses(identifier: String)(
         valid: (String, VaultToken),
@@ -213,7 +216,7 @@ class VaultSpec
               | }
               |}""".stripMargin)
       case _ =>
-        BadRequest("")
+        BadRequest(Json.obj("errors" := List("Invalid Token")))
     }
 
     HttpRoutes.of[F] {
@@ -260,7 +263,7 @@ class VaultSpec
               missingToken = roleIdWithoutToken,
               missingLease = roleIdWithoutLease
             )
-          case _ => BadRequest("")
+          case _ => BadRequest(Json.obj("errors" := List("Invalid secret_id")))
         }
       case req @ POST -> Root / "v1" / "auth" / "kubernetes" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
@@ -271,13 +274,13 @@ class VaultSpec
               missingToken = roleIdWithoutToken,
               missingLease = roleIdWithoutLease
             )
-          case _ => BadRequest("")
+          case _ => BadRequest(Json.obj("errors" := List("Invalid JWT")))
         }
       case req @ POST -> Root / "v1" / "auth" / "kubernetes2" / "login" =>
         req.decodeJson[RoleAndJwt].flatMap {
           case RoleAndJwt(`validKubernetesRole`, `validKubernetesJwt`) =>
             Ok(Json.obj("auth" := altValidToken).noSpaces)
-          case _ => BadRequest("")
+          case _ => BadRequest(Json.obj("errors" := List("Invalid JWT")))
         }
 
       case req @ POST -> Root / "v1" / "auth" / "github" / "login" =>
@@ -299,7 +302,7 @@ class VaultSpec
               missingToken = roleIdWithoutToken,
               missingLease = roleIdWithoutLease
             )
-          case _ => BadRequest("")
+          case _ => BadRequest(Json.obj("errors" := List("Invalid Password")))
         }
 
       case req @ GET -> Root / "v1" / "secret" / "postgres1" / "password" =>
@@ -408,7 +411,11 @@ class VaultSpec
         }
 
       case GET -> path =>
-        BadRequest(s"Path not mapped: $path")
+        BadRequest(
+          Json.obj(
+            "errors" := List(s"Path not mapped: $path")
+          )
+        )
     }
   }
 
@@ -426,8 +433,12 @@ class VaultSpec
       Vault
         .login(mockClient, uri)(UUID.randomUUID().toString)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -436,8 +447,17 @@ class VaultSpec
       Vault
         .login(mockClient, uri)(invalidJSONRoleId)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(
+                e @ VaultRequestError(
+                  message,
+                  Some(_: MalformedMessageBodyFailure)
+                )
+              ) =>
+            IO(assert(message.contains("Invalid JSON"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -446,8 +466,13 @@ class VaultSpec
       Vault
         .login(mockClient, uri)(roleIdWithoutToken)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("client_token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -458,8 +483,13 @@ class VaultSpec
       Vault
         .login(mockClient, uri)(roleIdWithoutLease)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("lease_duration"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -481,8 +511,12 @@ class VaultSpec
           validSecretId
         )
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -494,7 +528,12 @@ class VaultSpec
           UUID.randomUUID().toString
         )
         .attempt
-        .map(_.isLeft)
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid secret_id"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
         .assert
     }
   }
@@ -509,8 +548,17 @@ class VaultSpec
           validSecretId
         )
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(
+                e @ VaultRequestError(
+                  message,
+                  Some(_: MalformedMessageBodyFailure)
+                )
+              ) =>
+            IO(assert(message.contains("Invalid JSON"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -524,8 +572,13 @@ class VaultSpec
           validSecretId
         )
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("client_token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -539,8 +592,13 @@ class VaultSpec
           validSecretId
         )
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("lease_duration"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -575,8 +633,12 @@ class VaultSpec
           validKubernetesJwt
         )
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -585,8 +647,17 @@ class VaultSpec
       Vault
         .loginKubernetes(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(
+                e @ VaultRequestError(
+                  message,
+                  Some(_: MalformedMessageBodyFailure)
+                )
+              ) =>
+            IO(assert(message.contains("Invalid JSON"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -600,8 +671,13 @@ class VaultSpec
           validKubernetesJwt
         )
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("client_token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -615,8 +691,13 @@ class VaultSpec
           validKubernetesJwt
         )
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("lease_duration"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -633,18 +714,31 @@ class VaultSpec
       Vault
         .loginGitHub(mockClient, uri)(UUID.randomUUID().toString)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
-  test("loginGitHub should fail when the response is not a valid") {
+  test("loginGitHub should fail when the response is not valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .loginGitHub(mockClient, uri)(invalidJSONRoleId)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(
+                e @ VaultRequestError(
+                  message,
+                  Some(_: MalformedMessageBodyFailure)
+                )
+              ) =>
+            IO(assert(message.contains("Invalid JSON"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -653,8 +747,13 @@ class VaultSpec
       Vault
         .loginGitHub(mockClient, uri)(roleIdWithoutToken)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("client_token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -665,8 +764,13 @@ class VaultSpec
       Vault
         .loginGitHub(mockClient, uri)(roleIdWithoutLease)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("lease_duration"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -688,8 +792,12 @@ class VaultSpec
           validPassword
         )
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -701,8 +809,12 @@ class VaultSpec
           UUID.randomUUID().toString
         )
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
+            IO(assert(message.contains("Invalid Password"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -711,8 +823,17 @@ class VaultSpec
       Vault
         .loginUserPass(mockClient, uri)(invalidJSONRoleId, validPassword)
         .attempt
-        .map(_.isLeft)
-        .assert
+        .flatMap {
+          case Left(
+                e @ VaultRequestError(
+                  message,
+                  Some(_: MalformedMessageBodyFailure)
+                )
+              ) =>
+            IO(assert(message.contains("Invalid JSON"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -721,8 +842,13 @@ class VaultSpec
       Vault
         .loginUserPass(mockClient, uri)(roleIdWithoutToken, validPassword)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("client_token"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 
@@ -733,8 +859,13 @@ class VaultSpec
       Vault
         .loginUserPass(mockClient, uri)(roleIdWithoutLease, validPassword)
         .attempt
-        .map(_.leftMap(_.isInstanceOf[DecodeFailure]))
-        .assertEquals(Left(true))
+        .flatMap {
+          case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
+            IO(assert(message.contains("Missing required field"), clue(e))) *>
+              IO(assert(message.contains("lease_duration"), clue(e)))
+          case other =>
+            IO[Unit](fail("Expected VaultRequestError", clues(other)))
+        }
     }
   }
 

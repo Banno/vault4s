@@ -285,10 +285,14 @@ object VaultClient {
       leaseConfig,
       Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
     )
+      .attemptTap(_.leftTraverse(t => Async[F].delay(println(t))))
       .recoverWith {
         case VaultRequestError(
               _,
-              Some(UnexpectedStatus(Status.Forbidden, _, _))
+              Some(
+                UnexpectedStatus(Status.Forbidden, _, _) |
+                VaultApiError(Status.Forbidden, _)
+              )
             ) =>
           // This means the token has already expired or been revoked, so we can ignore this
           Async[F].unit
@@ -436,7 +440,10 @@ object VaultClient {
     def unapply(e: Throwable): Option[VaultRequestError] = e match {
       case vre @ VaultRequestError(
             _,
-            Some(UnexpectedStatus(Status.PreconditionFailed, _, _))
+            Some(
+              UnexpectedStatus(Status.PreconditionFailed, _, _) |
+              VaultApiError(Status.PreconditionFailed, _)
+            )
           ) =>
         Some(vre)
       case _ => None

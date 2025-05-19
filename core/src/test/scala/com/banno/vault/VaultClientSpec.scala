@@ -26,7 +26,8 @@ import com.banno.vault.VaultClient.CurrentlyInconsistent
 import com.banno.vault.models.{
   ConsistencyConfig,
   VaultConfig,
-  VaultRequestError
+  VaultRequestError,
+  VaultApiError
 }
 import io.circe.Json
 import munit.catseffect.IOFixture
@@ -118,6 +119,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
                           _,
                           Some(UnexpectedStatus(status, _, _))
                         ) =>
+                      status.pure[IO]
+                    case VaultRequestError(_, Some(VaultApiError(status, _))) =>
                       status.pure[IO]
                     case e => IO.raiseError(e)
                   })
