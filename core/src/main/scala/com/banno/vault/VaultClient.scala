@@ -503,7 +503,8 @@ object VaultClient {
       *
       * If the secret is not renewable, no attempts to renew will be made, and
       * the behavior will be the same as if [[VaultClient.readSecret]] were
-      * called and the result wrapped in a static [[RefSource]].
+      * called and the result wrapped in a static
+      * [[cats.effect.kernel.RefSource]].
       *
       * <h2>CAUTION: Vault secret leases and engine types</h2>
       *
