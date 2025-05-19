@@ -18,32 +18,65 @@ package com.banno.vault
 
 import cats.data.NonEmptyChain
 import cats.effect.kernel.{RefSource, Resource}
-import cats.effect.{Async, Ref, MonadCancelThrow}
 import cats.effect.syntax.all.*
+import cats.effect.{Async, Ref, Temporal}
 import cats.syntax.all.*
-import cats.{Applicative, NonEmptyParallel, ~>}
+import cats.{Applicative, MonadThrow, NonEmptyParallel, ~>}
+import com.banno.vault.Vault.NonRenewableSecret
 import com.banno.vault.models.*
 import io.circe.{Decoder, Encoder}
 import org.http4s.client.{Client, UnexpectedStatus}
 import org.http4s.{Status, Uri}
 
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
-import com.banno.vault.Vault.revokeLease
 
 /** An alternative to [[Vault]] that keeps track of the client, vault URI, and
   * client taken, as well as handling token renewal and retries.
   *
   * @see
   *   https://developer.hashicorp.com/vault/api-docs#api-operations
+  *
+  * @note
+  *   The `/v1` prefix is prepended to all secret paths, and indicates the API
+  *   version, not the secret engine version, check your server config if this
+  *   distinction matters for your use case. <br/><br/> `VaultClient` is known
+  *   to work with the KV1 engine, and may work with the KV2 engine, however
+  *   there are a few corner cases when this may not be the case. One example is
+  *   the that secret metadata and version capabilities of the KV2 engine are
+  *   not currently supported.
   */
 trait VaultClient[F[_]] {
 
-  /** @note
+  /** Read a secret at a `secretPath` and decode as an `A`
+    *
+    * <h2>TIP: Vault secret leases and engine types</h2>
+    *
+    * Most of the secret related methods in [[VaultClient]] implicitly assume
+    * the KV1 secret engine
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
+    * they're cache hints that suggest how long to wait before checking if the
+    * value has changed.
+    *
+    * <h3>CAUTION: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time,
+    * [[VaultClient.VaultClientExtensions.readSecretAndKeep]] may be what is
+    * needed.
+    *
+    * @note
     *   Despite being a prefix common to all secrets, `secret/` does need to
-    *   appear in `secretPath`. `/v1/`, however, does not need to be included.
+    *   appear in `secretPath`. `/v1/`, however, should not be included.
     *
     * If a secret resides at `/v1/secret/foo/bar/baz`, then `secretPath` should
     * be `secret/foo/bar/baz`
+    *
+    * @note
+    *   The `/v1` prefix indicates the API version, not the secret engine
+    *   version, check your server config if this distinction matters for your
+    *   use case.
+    *
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
     */
@@ -167,37 +200,19 @@ object VaultClient {
     def revoke(token: VaultToken): F[Unit] =
       revokeWithRetry(token, client, vaultConfig, consistencyConfig)
 
-    def sleep(token: VaultToken): F[Unit] = {
-      val waitInterval: Long =
-        Math.min(
-          token.leaseDuration,
-          vaultConfig.tokenLeaseExtension.toSeconds
-        ) * 9 / 10
-
-      Async[F].sleep(waitInterval.seconds)
-    }
+    def sleep(token: VaultToken): F[Unit] =
+      sleepUntilEarliest[F](
+        token.leaseDuration,
+        vaultConfig.tokenLeaseExtension.toSeconds
+      )
 
     def renew(token: VaultToken): F[VaultToken] =
       if (token.renewable)
-        renewWithRetry(token, client, vaultConfig, consistencyConfig)
-          .recoverWith { case vre: VaultRequestError =>
-            (revoke(token).attempt, login.attempt).parFlatMapN {
-              case (_, Right(token)) => token.pure[F]
-              case (Right(_), Left(loginError)) =>
-                if (!(vre eq loginError)) {
-                  vre.addSuppressed(loginError)
-                }
-                loginError.raiseError[F, VaultToken]
-              case (Left(revokeError), Left(loginError)) =>
-                if (!(vre eq revokeError)) {
-                  vre.addSuppressed(revokeError)
-                }
-                if (!(vre eq loginError)) {
-                  vre.addSuppressed(loginError)
-                }
-                loginError.raiseError[F, VaultToken]
-            }
-          }
+        recoverVaultRequestWithRevokeAndRetry(
+          renewWithRetry(token, client, vaultConfig, consistencyConfig),
+          revoke(token),
+          login
+        )
       else
         login
 
@@ -212,6 +227,12 @@ object VaultClient {
       }
       .map(ref => (ref: RefSource[F, VaultToken]).map(_.clientToken))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
+  }
+
+  private def sleepUntilEarliest[F[_]: Temporal](a: Long, b: Long): F[Unit] = {
+    val waitInterval: Long = Math.min(a, b) * 9 / 10
+
+    Temporal[F].sleep(waitInterval.seconds)
   }
 
   private def retryUntilConsistent[F[_]: Async, A](
@@ -294,6 +315,32 @@ object VaultClient {
           // This means the token has already expired or been revoked, so we can ignore this
           Async[F].unit
       }
+
+  private def recoverVaultRequestWithRevokeAndRetry[F[
+      _
+  ]: MonadThrow: NonEmptyParallel, A](
+      initial: F[A],
+      revoke: F[Unit],
+      retry: F[A]
+  ): F[A] =
+    initial.recoverWith { case vre: VaultRequestError =>
+      (revoke.attempt, retry.attempt).parFlatMapN {
+        case (_, Right(a)) => a.pure[F]
+        case (Right(_), Left(retryError)) =>
+          if (!(vre eq retryError)) {
+            vre.addSuppressed(retryError)
+          }
+          vre.raiseError[F, A]
+        case (Left(revokeError), Left(retryError)) =>
+          if (!(vre eq revokeError)) {
+            vre.addSuppressed(revokeError)
+          }
+          if (!(vre eq retryError)) {
+            vre.addSuppressed(retryError)
+          }
+          vre.raiseError[F, A]
+      }
+    }
 
   private class Default[F[_]: Async](
       client: Client[F],
@@ -447,58 +494,147 @@ object VaultClient {
   implicit class VaultClientExtensions[F[_]](private val vc: VaultClient[F])
       extends AnyVal {
 
-    /** Similar to [[readSecret]] but calls [[renewLease]] on a schedule to keep
-      * the secret renewed until the resource is closed IF the secret is
-      * renewable.
+    /** Similar to [[VaultClient.readSecretData]] but calls
+      * [[VaultClient.renewLease]] on a schedule to keep the secret renewed
+      * until the resource is closed IF the secret is renewable.
       *
+      * If the secret is renewable and becomes un-renewable, each time this
+      * happens, a single attempt will be made to re-request the secret.
+      *
+      * If the secret is not renewable, no attempts to renew will be made, and
+      * the behavior will be the same as if [[VaultClient.readSecret]] were
+      * called and the result wrapped in a static [[RefSource]].
+      *
+      * <h2>CAUTION: Vault secret leases and engine types</h2>
+      *
+      * While most of the secret related methods in [[VaultClient]] implicitly
+      * assume the KV1 secret engine, this method does not.
+      *
+      * KV1 secret engine leases do not invalidate the secret when they expire,
+      * they're cache hints that suggest how long to wait before checking if the
+      * value has changed. There's no functional difference between using this
+      * method to read a KV1 secret and simply reading the secret once.
+      *
+      * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+      *
+      * Dynamic secrets (like database credentials) are a common example, so if
+      * a secret becomes invalid after a set period of time, this method may be
+      * what is needed.
+      *
+      * @note
+      *   Unless `secretPath` is pointing to a dynamic secret, this provides no
+      *   benefit over [[VaultClient.readSecretData]], so it's worth checking to
+      *   see if this is actually needed.
+      * @note
+      *   The `/v1` prefix indicates the API version, not the secret engine
+      *   version, check your server config if this distinction matters for your
+      *   use case.
       * @see
       *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+      * @param secretLeaseExtension
+      *   If provided, determines the maximum delay between token lease
+      *   refreshes. If omitted, the TTL provided by the secret will be used.
       */
-    def readSecretAndRenewLease[A: Decoder](
+    def readSecretAndKeep[A: Decoder](
         secretPath: String,
-        leaseDuration: FiniteDuration
-    )(implicit F: Async[F], c: cats.effect.std.Console[F]): Resource[F, A] = {
-      Resource.eval(
-        cats.effect.std
-          .Console[F]
-          .println(s"********** TEST Started")
-      ) *>
+        secretLeaseExtension: Option[FiniteDuration]
+    )(implicit
+        F: Async[F],
+        NEP: NonEmptyParallel[F]
+    ): Resource[F, RefSource[F, A]] = {
+      val secretLeaseExtensionSeconds =
+        secretLeaseExtension.fold(Long.MaxValue)(_.toSeconds)
+
+      // Non-renewable secrets will provide equivalent behavior to `readSecretData`,
+      // and it'll eventually just fail, and that is out of our hands.
+      def nonRenewableSecretResource(
+          vaultSecret: VaultSecret[A]
+      ): Resource[F, RefSource[F, A]] =
         Resource
-          .eval(vc.readSecret[A](secretPath))
-          .flatTap { secret =>
-            def sleep(renewal: VaultSecretRenewal): F[Unit] = {
-              val waitInterval: Long =
-                Math.min(
-                  renewal.leaseDuration,
-                  leaseDuration.toSeconds
-                ) * 9 / 10
+          .pure(new RefSource[F, A] {
+            override def get: F[A] = vaultSecret.data.pure[F]
+          })
 
-              Async[F].sleep(waitInterval.seconds)
-            }
-
-            def revoke(renewal: VaultSecretRenewal): F[Unit] =
-              vc.revokeLease(renewal.leaseId)
-
-            secret.renewal.traverse { renewal =>
-              Resource
-                .make(Ref.of(renewal))(_.get.flatMap(revoke))
-                .flatTap { ref =>
-                  ref.get
-                    .flatMap { renewal =>
-                      cats.effect.std
-                        .Console[F]
-                        .println(s"********** TEST RENEWAL: ${renewal}")
-                      sleep(renewal) *>
-                        vc.renewLease(renewal.leaseId, leaseDuration)
-                          .flatTap(ref.set)
-                    }
-                    .foreverM
-                    .background
-                }
-            }
+      def renewableSecretResource(
+          initialSecret: VaultSecret[A],
+          initialLeaseId: String
+      ): Resource[F, RefSource[F, A]] =
+        Resource
+          .make(acquire(initialSecret, initialLeaseId))(release)
+          .flatTap { stateRef =>
+            stateRef.get
+              .flatMap { case (secret, mostRecentLeaseId) =>
+                secret.renewal
+                  .liftTo[F](NonRenewableSecret(mostRecentLeaseId))
+                  .flatMap(renewal =>
+                    sleep(renewal) >> renew(secret, renewal, mostRecentLeaseId)
+                  )
+                  .flatMap(stateRef.set)
+              }
+              .foreverM
+              .background
           }
-          .map(_.data)
-    }
+          .map { stateRef =>
+            val stateRefSource: RefSource[F, (VaultSecret[A], String)] =
+              stateRef
+            stateRefSource.map(_._1.data)
+          }
 
+      def readOnce: F[VaultSecret[A]] = vc.readSecret[A](secretPath)
+
+      def acquire(
+          initialSecret: VaultSecret[A],
+          initialLeaseId: String
+      ): F[Ref[F, (VaultSecret[A], String)]] =
+        Ref[F].of((initialSecret, initialLeaseId))
+
+      def release(secretRef: Ref[F, (VaultSecret[A], String)]): F[Unit] =
+        secretRef.get.flatMap { case (secret, _) =>
+          secret.renewal.traverse_ { renewal =>
+            vc.revokeLease(renewal.leaseId)
+          }
+        }
+
+      def sleep(renewal: VaultSecretRenewal): F[Unit] =
+        sleepUntilEarliest[F](
+          renewal.leaseDuration,
+          secretLeaseExtensionSeconds
+        )
+
+      def renew(
+          oldSecret: VaultSecret[A],
+          renewal: VaultSecretRenewal,
+          mostRecentLeaseId: String
+      ): F[(VaultSecret[A], String)] = {
+        val refreshSecret =
+          if (renewal.renewable)
+            recoverVaultRequestWithRevokeAndRetry(
+              vc.renewLease(
+                renewal.leaseId,
+                secretLeaseExtension.getOrElse(renewal.leaseDuration.seconds)
+              ).map(updatedRenewal =>
+                oldSecret.copy(renewal = updatedRenewal.some)
+              ),
+              vc.revokeLease(renewal.leaseId),
+              readOnce
+            )
+          else
+            readOnce
+
+        refreshSecret.fproduct { secret =>
+          secret.renewal.fold(mostRecentLeaseId)(_.leaseId)
+        }
+      }
+
+      Resource
+        .eval(readOnce)
+        .flatMap { vaultSecret =>
+          vaultSecret.renewal match {
+            case Some(renewal) =>
+              renewableSecretResource(vaultSecret, renewal.leaseId)
+            case None => nonRenewableSecretResource(vaultSecret)
+          }
+        }
+    }
   }
 }
