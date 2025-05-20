@@ -553,7 +553,7 @@ object VaultClient {
       ): Resource[F, RefSource[F, A]] =
         Resource
           .pure(new RefSource[F, A] {
-            override def get: F[A] = vaultSecret.data.pure[F]
+            override val get: F[A] = vaultSecret.data.pure[F]
           })
 
       def renewableSecretResource(
