@@ -284,19 +284,17 @@ object VaultClient {
     retryUntilConsistent(
       leaseConfig,
       Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
-    )
-      .attemptTap(_.leftTraverse(t => Async[F].delay(println(t))))
-      .recoverWith {
-        case VaultRequestError(
-              _,
-              Some(
-                UnexpectedStatus(Status.Forbidden, _, _) |
-                VaultApiError(Status.Forbidden, _)
-              )
-            ) =>
-          // This means the token has already expired or been revoked, so we can ignore this
-          Async[F].unit
-      }
+    ).recoverWith {
+      case VaultRequestError(
+            _,
+            Some(
+              UnexpectedStatus(Status.Forbidden, _, _) |
+              VaultApiError(Status.Forbidden, _)
+            )
+          ) =>
+        // This means the token has already expired or been revoked, so we can ignore this
+        Async[F].unit
+    }
 
   private class Default[F[_]: Async](
       client: Client[F],
