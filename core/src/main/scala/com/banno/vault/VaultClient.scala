@@ -306,15 +306,17 @@ object VaultClient {
     retryUntilConsistent(
       leaseConfig,
       Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
-    )
-      .recoverWith {
-        case VaultRequestError(
-              _,
-              Some(UnexpectedStatus(Status.Forbidden, _, _))
-            ) =>
-          // This means the token has already expired or been revoked, so we can ignore this
-          Async[F].unit
-      }
+    ).recoverWith {
+      case VaultRequestError(
+            _,
+            Some(
+              UnexpectedStatus(Status.Forbidden, _, _) |
+              VaultApiError(Status.Forbidden, _)
+            )
+          ) =>
+        // This means the token has already expired or been revoked, so we can ignore this
+        Async[F].unit
+    }
 
   private def recoverVaultRequestWithRevokeAndRetry[F[
       _
@@ -484,7 +486,10 @@ object VaultClient {
     def unapply(e: Throwable): Option[VaultRequestError] = e match {
       case vre @ VaultRequestError(
             _,
-            Some(UnexpectedStatus(Status.PreconditionFailed, _, _))
+            Some(
+              UnexpectedStatus(Status.PreconditionFailed, _, _) |
+              VaultApiError(Status.PreconditionFailed, _)
+            )
           ) =>
         Some(vre)
       case _ => None
