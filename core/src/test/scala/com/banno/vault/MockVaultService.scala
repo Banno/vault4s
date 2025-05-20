@@ -27,7 +27,7 @@ import com.banno.vault.MockVaultService.InternalLog.*
 import com.banno.vault.MockVaultService.Role.{AppRole, K8s}
 import com.banno.vault.models.VaultToken
 import io.circe.syntax.*
-import io.circe.{Decoder, DecodingFailure, Json}
+import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import org.http4s.*
 import org.http4s.Uri.Path
 import org.http4s.circe.*
@@ -133,8 +133,9 @@ class MockVaultService[F[_]: Async](
     (
       roles.map(_.toVector),
       secrets.map(_.toVector),
-      logsRef.get.map(_.toVector)
-    ).mapN { (roles, secrets, logs) =>
+      logsRef.get.map(_.toVector),
+      logs
+    ).mapN { (roles, secrets, internalLogs, externalLogs) =>
       val text = List(
         roles
           .map { case (role, template) => s"${role.logId} -> $template" }
@@ -148,7 +149,8 @@ class MockVaultService[F[_]: Async](
                |""".stripMargin
           }
           .mkString("Secrets\n=======\n", "\n", "\n"),
-        logs.mkString("Server Logs\n===========\n", "\n", "\n")
+        externalLogs.mkString("Simplified Logs\n===============\n", "\n", "\n"),
+        internalLogs.mkString("Server Logs\n===========\n", "\n", "\n")
       ).mkString("\n")
       text
     }
@@ -645,6 +647,24 @@ object MockVaultService {
       data: Json,
       leaseOpt: Option[LeaseTemplate]
   )
+  object Secret {
+    def apply[A: Encoder](
+        roles: List[Role],
+        data: A,
+        leaseOpt: Option[LeaseTemplate]
+    ): Secret =
+      new Secret(roles, data.asJson, leaseOpt)
+
+    def apply[A: Encoder](roles: List[Role], data: A): Secret =
+      new Secret(roles, data.asJson, None)
+
+    def apply[A: Encoder](
+        roles: List[Role],
+        data: A,
+        lease: LeaseTemplate
+    ): Secret =
+      new Secret(roles, data.asJson, lease.some)
+  }
 
   final case class VaultValue(value: String)
   object VaultValue {
