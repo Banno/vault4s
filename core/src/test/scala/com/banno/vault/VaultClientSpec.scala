@@ -19,6 +19,7 @@ package com.banno.vault
 import cats.effect.testkit.TestControl
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
+import com.banno.vault.MockVaultService.LeaseTemplate.renewable
 import com.banno.vault.MockVaultService.Log.*
 import com.banno.vault.MockVaultService.Role.K8s
 import com.banno.vault.MockVaultService.{LeaseTemplate, Secret}
@@ -29,14 +30,13 @@ import com.banno.vault.models.{
   VaultRequestError,
   VaultApiError
 }
-import io.circe.Json
 import munit.catseffect.IOFixture
 import munit.{AnyFixture, CatsEffectSuite, ScalaCheckEffectSuite}
 import org.http4s.Status
 import org.http4s.client.UnexpectedStatus
 import org.http4s.syntax.literals.*
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationDouble, DurationInt}
 
 class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
 
@@ -70,10 +70,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   test("VaultClient.loginOnce won't revoke the token prematurely") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <-
           VaultClient
             .loginOnce[IO](mockService.client, vaultConfig, consistencyConfig)
@@ -101,10 +99,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   test("VaultClient.loginOnce won't renew the token") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <-
           VaultClient
             .loginOnce[IO](mockService.client, vaultConfig, consistencyConfig)
@@ -150,10 +146,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   test("VaultClient.loginAndKeep won't revoke the token prematurely") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(1.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <-
           VaultClient
             .loginAndKeep[IO](
@@ -191,9 +185,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
             maxDuration = 10.minutes
           )
         )
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <-
           VaultClient
             .loginAndKeep[IO](
@@ -245,9 +237,7 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
             maxDuration = 3.minutes
           )
         )
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <-
           VaultClient
             .loginAndKeep[IO](
@@ -308,13 +298,11 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultClient.logAndKeep will retry when a 412 is returned") {
+  test("VaultClient.loginAndKeep will retry when a 412 is returned") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(10.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <- mockService.setEventualInconsistencyLevel(
           path"/v1/auth/kubernetes/login",
           1
@@ -343,13 +331,11 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
-  test("VaultClient.logAndKeep will respect the 412 retry limit") {
+  test("VaultClient.loginAndKeep will respect the 412 retry limit") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(10.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <- mockService.setEventualInconsistencyLevel(
           path"/v1/auth/kubernetes/login",
           1
@@ -437,10 +423,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   test("VaultClient#readSecret will retry when a 412 is returned") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(10.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <- mockService.setEventualInconsistencyLevel(path"/v1/secret/foo", 1)
         _ <-
           VaultClient
@@ -474,10 +458,8 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
   test("VaultClient#readSecret will respect the 412 retry limit") {
     val program =
       for {
-        _ <- mockService.addRoles(role -> LeaseTemplate.renewable(10.minute))
-        _ <- mockService.addV1Secrets(
-          path"foo" -> Secret(role :: Nil, Json.fromInt(5), none)
-        )
+        _ <- mockService.addRoles(role -> renewable(10.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
         _ <- mockService.setEventualInconsistencyLevel(path"/v1/secret/foo", 1)
         _ <-
           VaultClient
@@ -560,6 +542,271 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
             TokenRevoked(
               path"/v1/auth/token/revoke-self",
               s"$roleLogId token 2"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test(
+    "VaultClient#readSecretAndKeep won't attempt to renew a non-renewable secret"
+  ) {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(4.minutes, 10.minutes))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .flatMap(_.readSecretAndKeep[Int]("secret/foo", 1.minute.some))
+            .use(s =>
+              s.get.assertEquals(5) *>
+                IO.sleep(5.minutes) *>
+                mockService.logs
+                  .map(_.collect { case _: LeaseRevoked => true })
+                  .assertEquals(Vector.empty) *>
+                s.get.assertEquals(5)
+            )
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            TokenRenewed(
+              path"/v1/auth/token/renew-self",
+              s"$roleLogId token 0"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test("VaultClient#readSecretAndKeep won't revoke the secret prematurely") {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(role :: Nil, 5, renewable(2.minutes))
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .flatMap(_.readSecretAndKeep[Int]("secret/foo", 1.minute.some))
+            .use(s =>
+              IO.sleep(30.seconds) *>
+                mockService.logs
+                  .map(_.collect { case _: LeaseRevoked => true })
+                  .assertEquals(Vector.empty) *>
+                s.get
+            )
+            .assertEquals(5)
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path"/v1/secret/foo",
+              "k8s:jDoe token 0",
+              "k8s:jDoe lease 0"
+            ),
+            LeaseRevoked(
+              path"/v1/sys/leases/revoke",
+              "k8s:jDoe token 0",
+              "k8s:jDoe lease 0"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test("VaultClient#readSecretAndKeep will renew the secret lease") {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(1.hour))
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(
+            role :: Nil,
+            5,
+            renewable(
+              duration = 2.minutes,
+              maxDuration = 10.minutes
+            )
+          )
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .use { vault =>
+              vault
+                .readSecretAndKeep[Int]("secret/foo", 1.minute.some)
+                .use { secret =>
+                  secret.get.assertEquals(5).andWait(3.5.minutes) *>
+                    secret.get.assertEquals(5)
+                }
+            }
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRenewed(
+              path"/v1/sys/leases/renew",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRenewed(
+              path"/v1/sys/leases/renew",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRenewed(
+              path"/v1/sys/leases/renew",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRevoked(
+              path"/v1/sys/leases/revoke",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test(
+    "VaultClient#readSecretAndKeep will get a new secret if the secret cannot be renewed"
+  ) {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(1.hour))
+        _ <- mockService.addV1Secrets(
+          path"foo" -> Secret(
+            role :: Nil,
+            5,
+            renewable(
+              duration = 1.minute,
+              maxDuration = 2.minutes
+            )
+          )
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              vaultConfig,
+              consistencyConfig
+            )
+            .flatMap(_.readSecretAndKeep[Int]("secret/foo", none))
+            .use { secret =>
+              mockService
+                .addV1Secrets(
+                  path"foo" -> Secret(
+                    role :: Nil,
+                    7,
+                    renewable(
+                      duration = 1.minute,
+                      maxDuration = 2.minutes
+                    )
+                  )
+                ) *>
+                secret.get
+                  .assertEquals(5)
+                  .andWait(1.5.minutes) *>
+                secret.get
+                  .assertEquals(5)
+                  .andWait(1.minute) *>
+                secret.get.assertEquals(7)
+            }
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRenewed(
+              path"/v1/sys/leases/renew",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            LeaseRenewed(
+              path"/v1/sys/leases/renew",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 0"
+            ),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            ),
+            LeaseCreated(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 1"
+            ),
+            LeaseExpired(path"/v1/sys/leases/revoke", s"$roleLogId lease 0"),
+            LeaseRevoked(
+              path"/v1/sys/leases/revoke",
+              s"$roleLogId token 0",
+              s"$roleLogId lease 1"
+            ),
+            TokenRevoked(
+              path"/v1/auth/token/revoke-self",
+              s"$roleLogId token 0"
             )
           )
         )
