@@ -41,9 +41,8 @@ object VaultRequestError {
   ): String = {
     val extraString = extra.map(e => s", $e").getOrElse("")
     val requestString: String =
-      s"""Error on request: Request(method=${request.method}, uri=${request.uri
-          .toString()}$extraString)"""
-    s"$requestString ${cause map (c => s"\nCause: ${c.getMessage}") getOrElse ""}"
+      s"""Error on request: Request(method=${request.method}, uri=${request.uri.renderString}$extraString)"""
+    s"$requestString${cause map (c => s"\nCause: ${c.getMessage}") getOrElse ""}"
   }
 
 }

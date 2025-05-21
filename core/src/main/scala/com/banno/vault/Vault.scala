@@ -22,7 +22,7 @@ import cats.syntax.all.*
 import com.banno.vault.models.*
 import fs2.Stream
 import io.circe.syntax.*
-import io.circe.{Decoder, DecodingFailure, Encoder, Json}
+import io.circe.*
 import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.client.*
@@ -54,14 +54,35 @@ object Vault {
       method = Method.POST,
       uri = vaultUri / "v1" / "auth" / "approle" / "login"
     ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(VaultRequestError(request, e.some, s"roleId=$roleId".some))
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
-        decoderError
+
+    decodeLoginOrFail[F](
+      request,
+      client.run(request),
+      s"roleId=$roleId".some
+    )
+  }
+
+  /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+    */
+  def loginAppRoleAndSecretId[F[_]](client: Client[F], vaultUri: Uri)(
+      roleId: String,
+      secretId: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "approle" / "login"
+    ).withEntity(
+      Json.obj(
+        "role_id" := roleId,
+        "secret_id" := secretId
       )
-    } yield token
+    )
+
+    decodeLoginOrFail[F](
+      request,
+      client.run(request),
+      s"roleId=$roleId, secretId=XXXX".some
+    )
   }
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
@@ -84,16 +105,12 @@ object Vault {
         ("jwt", Json.fromString(jwt))
       )
     )
-    for {
-      json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-        F.raiseError(
-          VaultRequestError(request, e.some, s"role=$role".some)
-        ) // don't expose jwt in error
-      }
-      token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
-        decoderError
-      )
-    } yield token
+
+    decodeLoginOrFail[F](
+      request,
+      client.run(request),
+      s"role=$role".some // don't expose jwt in error
+    )
   }
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
@@ -108,6 +125,41 @@ object Vault {
   )(implicit F: Concurrent[F]): F[VaultToken] =
     loginKubernetes(client, vaultUri)(role, jwt)
 
+  /** https://developer.hashicorp.com/vault/docs/auth/github
+    */
+  def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
+      token: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "github" / "login"
+    ).withEntity(Json.obj(("token", Json.fromString(token))))
+
+    decodeLoginOrFail[F](
+      request,
+      client.run(request),
+      none // don't expose token in error
+    )
+  }
+
+  /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
+    */
+  def loginUserPass[F[_]](client: Client[F], vaultUri: Uri)(
+      username: String,
+      password: String
+  )(implicit F: Concurrent[F]): F[VaultToken] = {
+    val request = Request[F](
+      method = Method.POST,
+      uri = vaultUri / "v1" / "auth" / "userpass" / "login" / username
+    ).withEntity(Json.obj("password" := password))
+
+    decodeLoginOrFail[F](
+      request,
+      client.run(request),
+      s"username=$username".some // don't expose password in error
+    )
+  }
+
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
   def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(
@@ -121,19 +173,15 @@ object Vault {
       uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
-    F.adaptError(
-      client.expect[VaultSecret[A]](request)(jsonOf[F, VaultSecret[A]])
-    ) { case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
-      InvalidMessageBodyFailure("Could not decode secret key value", cause.some)
-    }.handleErrorWith { e =>
-      F.raiseError(
-        VaultRequestError(
-          request = request,
-          cause = e.some,
-          extra = s"tokenLength=${token.length}".some
-        )
-      )
-    }
+
+    decodeResponseOrFail[F, VaultSecret[A]](
+      request,
+      client.run(request),
+      _.hcursor,
+      s"tokenLength=${token.length}".some,
+      df =>
+        InvalidMessageBodyFailure("Could not decode secret key value", df.some)
+    )
   }
 
   /** https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET
@@ -152,19 +200,18 @@ object Vault {
         .withQueryParam("list", "true"),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
-    F.adaptError(client.expect[VaultKeys](request)(jsonOf[F, VaultKeys])) {
-      case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
+
+    decodeResponseOrFail[F, VaultKeys](
+      request,
+      client.run(request),
+      _.hcursor,
+      s"tokenLength=${token.length}".some,
+      df =>
         InvalidMessageBodyFailure(
           "Could not decode vault list secrets response",
-          cause.some
+          df.some
         )
-      case e =>
-        VaultRequestError(
-          request = request,
-          cause = e.some,
-          extra = s"tokenLength=${token.length}".some
-        )
-    }
+    )
   }
 
   /** https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#delete-secret
@@ -180,19 +227,10 @@ object Vault {
       uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
+
     client
-      .status(request)
-      .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
-      .handleErrorWith { e =>
-        F.raiseError(
-          VaultRequestError(
-            request,
-            e.some,
-            s"tokenLength=${token.length}".some
-          )
-        )
-      }
-      .void
+      .run(request)
+      .use(expectSuccessOrFail(request, _, s"tokenLength=${token.length}".some))
   }
 
   /** https://www.vaultproject.io/api/system/leases.html#renew-lease
@@ -213,21 +251,18 @@ object Vault {
         ("increment", Json.fromLong(newLeaseDuration.toSeconds))
       )
     )
-    for {
-      renewal <- F.handleErrorWith(
-        client.expect[VaultSecretRenewal](request)(
-          jsonOf[F, VaultSecretRenewal]
+
+    decodeResponseOrFail[F, VaultSecretRenewal](
+      request,
+      client.run(request),
+      _.hcursor,
+      s"tokenLength=${token.length}".some,
+      df =>
+        InvalidMessageBodyFailure(
+          "Could not decode vault lease renew response",
+          df.some
         )
-      ) { e =>
-        F.raiseError(
-          VaultRequestError(
-            request = request,
-            cause = e.some,
-            extra = s"tokenLength=${token.length}".some
-          )
-        )
-      }
-    } yield renewal
+    )
   }
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
@@ -237,7 +272,7 @@ object Vault {
       newLeaseDuration: FiniteDuration
   )(implicit F: Concurrent[F]): F[VaultToken] =
     if (!token.renewable)
-      new NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
+      NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
     else {
       val request = Request[F](
         method = Method.POST,
@@ -249,20 +284,18 @@ object Vault {
           ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
         )
       )
-      for {
-        json <- F.handleErrorWith(client.expect[Json](request)) { e =>
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"tokenLength=${token.clientToken.length}".some
-            )
+
+      decodeResponseOrFail[F, VaultToken](
+        request,
+        client.run(request),
+        _.hcursor.downField("auth"),
+        s"tokenLength=${token.clientToken.length}".some,
+        df =>
+          InvalidMessageBodyFailure(
+            "Could not decode vault token renew response",
+            df.some
           )
-        }
-        token <- raiseKnownError(json.hcursor.get[VaultToken]("auth"))(
-          decoderError
-        )
-      } yield token
+      )
     }
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
@@ -276,19 +309,16 @@ object Vault {
       headers =
         Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
     )
-    val resp = client
-      .status(request)
-      .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
-      .void
-    F.handleErrorWith(resp) { e =>
-      F.raiseError(
-        VaultRequestError(
+
+    client
+      .run(request)
+      .use(
+        expectSuccessOrFail(
           request,
-          e.some,
+          _,
           s"tokenLength=${token.clientToken.length}".some
         )
       )
-    }
   }
 
   /** https://www.vaultproject.io/api/system/leases.html#revoke-lease
@@ -303,20 +333,16 @@ object Vault {
         vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/revoke")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
     ).withEntity(Json.obj("lease_id" -> Json.fromString(leaseId)))
-    for {
-      _ <- client
-        .status(request)
-        .ensureOr(UnexpectedStatus(_, request.method, request.uri))(_.isSuccess)
-        .handleErrorWith { e =>
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"tokenLength=${clientToken.length}".some
-            )
-          )
-        }
-    } yield ()
+
+    client
+      .run(request)
+      .use(
+        expectSuccessOrFail(
+          request,
+          _,
+          s"tokenLength=${clientToken.length}".some
+        )
+      )
   }
 
   /** https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
@@ -342,45 +368,35 @@ object Vault {
       uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
       headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
     )
-    val withBody = request.withEntity(payload.asJson)
-    client.run(withBody).use {
-      case resp @ Status.Successful(_) =>
-        resp
-          .attemptAs[VaultSecret[B]](jsonOf[F, VaultSecret[B]])
-          .adaptError {
-            case InvalidMessageBodyFailure(_, Some(cause: DecodingFailure)) =>
-              InvalidMessageBodyFailure(
-                "Could not decode secret key value",
-                cause.some
-              )
+
+    decodeResponseOrFailOpt[F, VaultSecret[B]](
+      request,
+      client.run(request.withEntity(payload.asJson)),
+      _.hcursor,
+      s"tokenLength=${token.length}".some,
+      df =>
+        InvalidMessageBodyFailure("Could not decode secret key value", df.some)
+    ).flatMap {
+      case Some(vs) => vs.pure[F]
+      case None =>
+        readSecret[F, B](client, vaultUri)(token, secretPath)
+          .adaptError { case readError =>
+            readError.addSuppressed(
+              UnexpectedStatus(Status.NoContent, request.method, request.uri)
+            )
+            VaultRequestError(
+              request = request,
+              cause = readError.some,
+              extra = s"tokenLength=${token.length}".some
+            )
           }
-          .valueOrF { decodeError =>
-            readSecret[F, B](client, vaultUri)(token, secretPath)
-              .adaptError { case readError =>
-                decodeError.addSuppressed(readError)
-                VaultRequestError(
-                  request = withBody,
-                  cause = decodeError.some,
-                  extra = s"tokenLength=${token.length}".some
-                )
-              }
-          }
-      case resp =>
-        F.raiseError(
-          VaultRequestError(
-            request = withBody,
-            cause =
-              UnexpectedStatus(resp.status, request.method, request.uri).some,
-            extra = s"tokenLength=${token.length}".some
-          )
-        )
     }
   }
 
   /** <h1>WARNING: This method is deeply flawed.</h1>
     *
     * Don't panic, and please migrate to [[VaultClient]] at your earliest
-    * convenience or replace this with [[Vault.readSecret]].
+    * convenience.
     *
     * <h2>CAUTION: `fs2.Stream` abuse</h2>
     *
@@ -419,15 +435,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -507,15 +529,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -588,15 +616,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -813,15 +847,21 @@ object Vault {
     *
     * </ul>
     *
-    * <h2>CAUTION: Vault secret leases</h2>
+    * <h2>CAUTION: Vault secret leases and engine types</h2>
     *
-    * This method fundamentally misunderstands how V1 secret leases work in
-    * Vault. They aren't leases which invalidate the secret when they expire,
+    * While most of the secret related methods in [[Vault]] implicitly assume
+    * the KV1 secret engine, this method does not.
+    *
+    * KV1 secret engine leases do not invalidate the secret when they expire,
     * they're cache hints that suggest how long to wait before checking if the
-    * value has changed.
+    * value has changed. There's no functional difference between using this
+    * method to read a KV1 secret and simply reading the secret once.'
     *
-    * There's no functional difference between using this method and simply
-    * reading the secret once.
+    * <h3>HOWEVER: non-KV2 secrets <i>may</i> expire</h3>
+    *
+    * Dynamic secrets (like database credentials) are a common example, so if a
+    * secret becomes invalid after a set period of time, this method may be what
+    * is needed.
     *
     * <hr/>
     *
@@ -888,10 +928,117 @@ object Vault {
         s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}"
       )
 
-  private[this] def raiseKnownError[F[_], E1, E2 <: Throwable, A](
-      e: Either[E1, A]
-  )(errorF: E1 => E2)(implicit F: Concurrent[F]): F[A] =
-    F.fromEither(e.leftMap(errorF))
+  private[this] def decodeResponseOrFailOpt[F[_]: Concurrent, A: Decoder](
+      request: Request[F],
+      responseR: Resource[F, Response[F]],
+      toCursor: Json => ACursor,
+      extra: Option[String],
+      fmtDecoderFailure: DecodingFailure => DecodeFailure
+  ): F[Option[A]] =
+    responseR.use { response =>
+      if (response.status === Status.NoContent)
+        none.pure[F]
+      else if (response.status.isSuccess)
+        response.json
+          .adaptError { case e => VaultRequestError(request, e.some, extra) }
+          .flatMap { json =>
+            toCursor(json)
+              .as[A]
+              .leftFlatMap { e =>
+                VaultApiError
+                  .decode(response.status, json)
+                  .fold(
+                    _ => fmtDecoderFailure(e).asLeft[A],
+                    vae =>
+                      Left {
+                        if (vae.errors.nonEmpty) vae
+                        else fmtDecoderFailure(e)
+                      }
+                  )
+              }
+              .bimap(
+                cause => VaultRequestError(request, cause.some, extra),
+                _.some
+              )
+              .liftTo[F]
+          }
+      else
+        response.json.flatMap { json =>
+          val cause = VaultApiError
+            .decode(response.status, json)
+            .valueOr(fmtDecoderFailure(_))
+
+          VaultRequestError(request, cause.some, extra).raiseError[F, Option[A]]
+        }
+    }
+
+  private[this] def decodeResponseOrFail[F[_]: Concurrent, A: Decoder](
+      request: Request[F],
+      responseR: Resource[F, Response[F]],
+      toCursor: Json => ACursor,
+      extra: Option[String],
+      fmtDecoderFailure: DecodingFailure => DecodeFailure
+  ): F[A] =
+    decodeResponseOrFailOpt[F, A](
+      request,
+      responseR,
+      toCursor,
+      extra,
+      fmtDecoderFailure
+    )
+      .flatMap(_.liftTo[F] {
+        VaultRequestError(
+          request,
+          UnexpectedStatus(Status.NoContent, request.method, request.uri).some,
+          extra
+        )
+      })
+
+  private[this] def decodeLoginOrFail[F[_]: Concurrent](
+      request: Request[F],
+      response: Resource[F, Response[F]],
+      extra: Option[String]
+  ): F[VaultToken] =
+    decodeResponseOrFail[F, VaultToken](
+      request,
+      response,
+      _.hcursor.downField("auth"),
+      extra,
+      decoderError
+    )
+
+  private[this] def expectSuccessOrFail[F[_]: Concurrent](
+      request: Request[F],
+      response: Response[F],
+      extra: Option[String]
+  ): F[Unit] =
+    if (response.status.isSuccess) Applicative[F].unit
+    else {
+      val unexpectedStatus =
+        UnexpectedStatus(response.status, request.method, request.uri)
+      response.json
+        .adaptError { case e =>
+          unexpectedStatus.addSuppressed(e)
+          VaultRequestError(request, unexpectedStatus.some, extra)
+        }
+        .flatMap { json =>
+          VaultApiError
+            .decode(response.status, json)
+            .fold(
+              df => {
+                unexpectedStatus.addSuppressed(df)
+                VaultRequestError(request, unexpectedStatus.some, extra)
+              },
+              vae => {
+                if (vae.errors.nonEmpty)
+                  VaultRequestError(request, vae.some, extra)
+                else
+                  VaultRequestError(request, unexpectedStatus.some, extra)
+              }
+            )
+            .raiseError[F, Unit]
+        }
+    }
 
   final case class InvalidRequirement(message: String) extends Throwable {
     override def getMessage(): String = message
