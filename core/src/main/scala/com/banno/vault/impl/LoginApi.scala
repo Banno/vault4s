@@ -19,7 +19,7 @@ package com.banno.vault.impl
 import cats.*
 import cats.effect.*
 import cats.syntax.all.*
-import com.banno.vault.impl.DecodeUtils.*
+import com.banno.vault.impl.Utils.*
 import com.banno.vault.models.*
 import io.circe.*
 import io.circe.syntax.*
@@ -33,13 +33,15 @@ private[vault] object LoginApi {
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
     */
-  def login[F[_]](client: Client[F], vaultUri: Uri)(
+  def login[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       roleId: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
+  ): F[VaultToken] = {
     val request = Request[F](
       method = Method.POST,
       uri = vaultUri / "v1" / "auth" / "approle" / "login"
-    ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
+    ).withEntity(Json.obj("role_id" := roleId))
 
     decodeLoginOrFail[F](
       request,
@@ -50,10 +52,12 @@ private[vault] object LoginApi {
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
     */
-  def loginAppRoleAndSecretId[F[_]](client: Client[F], vaultUri: Uri)(
+  def loginAppRoleAndSecretId[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       roleId: String,
       secretId: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
+  ): F[VaultToken] = {
     val request = Request[F](
       method = Method.POST,
       uri = vaultUri / "v1" / "auth" / "approle" / "login"
@@ -77,18 +81,20 @@ private[vault] object LoginApi {
     *   The mount point of the Kubernetes auth method. Should start with a
     *   slash.
     */
-  def loginKubernetes[F[_]](client: Client[F], vaultUri: Uri)(
+  def loginKubernetes[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       role: String,
       jwt: String,
       mountPoint: Uri.Path = path"/auth/kubernetes"
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
+  ): F[VaultToken] = {
     val request = Request[F](
       method = Method.POST,
       uri = vaultUri.withPath(path"/v1" |+| mountPoint |+| path"/login")
     ).withEntity(
       Json.obj(
-        ("role", Json.fromString(role)),
-        ("jwt", Json.fromString(jwt))
+        "role" := role,
+        "jwt" := jwt
       )
     )
 
@@ -101,13 +107,15 @@ private[vault] object LoginApi {
 
   /** https://developer.hashicorp.com/vault/docs/auth/github
     */
-  def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
+  def loginGitHub[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       token: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
+  ): F[VaultToken] = {
     val request = Request[F](
       method = Method.POST,
       uri = vaultUri / "v1" / "auth" / "github" / "login"
-    ).withEntity(Json.obj(("token", Json.fromString(token))))
+    ).withEntity(Json.obj("token" := token))
 
     decodeLoginOrFail[F](
       request,
@@ -118,10 +126,12 @@ private[vault] object LoginApi {
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
     */
-  def loginUserPass[F[_]](client: Client[F], vaultUri: Uri)(
+  def loginUserPass[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       username: String,
       password: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
+  ): F[VaultToken] = {
     val request = Request[F](
       method = Method.POST,
       uri = vaultUri / "v1" / "auth" / "userpass" / "login" / username

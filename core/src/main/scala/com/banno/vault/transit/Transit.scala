@@ -37,7 +37,12 @@ object Transit {
       token: String,
       key: KeyName
   ): F[KeyDetails] =
-    TransitApi.keyDetails(client, vaultUri, token, TransitApi.keyAsPath(key))
+    TransitApi.keyDetails(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key)
+    )
 
   /** Function to encrypt data.
     *
@@ -52,7 +57,7 @@ object Transit {
     TransitApi.encrypt(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       plaintext,
       none
@@ -71,7 +76,7 @@ object Transit {
     TransitApi.encrypt(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       plaintext,
       context.some
@@ -94,7 +99,7 @@ object Transit {
     TransitApi.encryptBatch(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       payload,
       "EncryptBatch without context"
@@ -114,7 +119,7 @@ object Transit {
     TransitApi.decrypt(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       cipherText,
       none
@@ -133,7 +138,7 @@ object Transit {
     TransitApi.decrypt(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       cipherText,
       context.some
@@ -160,7 +165,7 @@ object Transit {
     TransitApi.decryptBatch(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       payload,
       "DecryptBatch without context"
@@ -192,7 +197,7 @@ object Transit {
     TransitApi.decryptBatch(
       client,
       vaultUri,
-      token,
+      VaultToken.wrap(token),
       TransitApi.keyAsPath(key),
       payload,
       "DecryptBatch with context"
@@ -217,26 +222,24 @@ final class TransitClient[F[_]](
     this(
       client,
       vaultUri,
-      VaultToken(token, Long.MaxValue, false).pure[F],
+      VaultToken.wrap(token).pure[F],
       TransitApi.keyAsPath(keyName)
     )
   }
-
-  private def clientTokenF: F[String] = vaultTokenF.map(_.clientToken)
 
   /** Function to access the details of a transit Key
     *
     * https://www.vaultproject.io/api/secret/transit/index.html#read-key
     */
   def keyDetails: F[KeyDetails] =
-    clientTokenF.flatMap(TransitApi.keyDetails[F](client, vaultUri, _, keyPath))
+    vaultTokenF.flatMap(TransitApi.keyDetails[F](client, vaultUri, _, keyPath))
 
   /** Function to encrypt data, given the name of the secret
     *
     * https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
   def encrypt(plaintext: PlainText): F[CipherText] =
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.encrypt[F](client, vaultUri, _, keyPath, plaintext, none)
     )
 
@@ -248,7 +251,7 @@ final class TransitClient[F[_]](
       plaintext: PlainText,
       context: Context
   ): F[CipherText] =
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.encrypt(
         client,
         vaultUri,
@@ -271,7 +274,7 @@ final class TransitClient[F[_]](
       plaintexts: NonEmptyList[PlainText]
   ): F[NonEmptyList[TransitError.Or[CipherText]]] = {
     val payload = EncryptBatchRequest(plaintexts.map(EncryptRequest(_, None)))
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.encryptBatch(
         client,
         vaultUri,
@@ -293,7 +296,7 @@ final class TransitClient[F[_]](
     val payload = EncryptBatchRequest(inputs.map { case (pt, ctx) =>
       EncryptRequest(pt, Some(ctx))
     })
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.encryptBatch(
         client,
         vaultUri,
@@ -308,7 +311,7 @@ final class TransitClient[F[_]](
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
     */
   def decrypt(cipherText: CipherText): F[PlainText] =
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.decrypt(client, vaultUri, _, keyPath, cipherText, none)
     )
 
@@ -318,7 +321,7 @@ final class TransitClient[F[_]](
       cipherText: CipherText,
       context: Context
   ): F[PlainText] =
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.decrypt(
         client,
         vaultUri,
@@ -341,7 +344,7 @@ final class TransitClient[F[_]](
       inputs: NonEmptyList[CipherText]
   ): F[NonEmptyList[TransitError.Or[PlainText]]] = {
     val payload = DecryptBatchRequest(inputs.map(DecryptRequest(_, None)))
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.decryptBatch(
         client,
         vaultUri,
@@ -366,7 +369,7 @@ final class TransitClient[F[_]](
     val payload = DecryptBatchRequest(inputs.map { case (cipht, ctx) =>
       DecryptRequest(cipht, Some(ctx))
     })
-    clientTokenF.flatMap(
+    vaultTokenF.flatMap(
       TransitApi.decryptBatch(
         client,
         vaultUri,

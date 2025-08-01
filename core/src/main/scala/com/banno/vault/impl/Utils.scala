@@ -24,15 +24,28 @@ import io.circe.*
 import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.client.*
+import org.typelevel.ci.CIString
 
-private[impl] object DecodeUtils {
-  private[impl] val decoderError: DecodingFailure => DecodeFailure =
+private[impl] object Utils {
+  def authedRequest[F[_]](
+      method: Method,
+      uri: Uri,
+      token: VaultToken
+  ): Request[F] =
+    Request[F](
+      method = method,
+      uri = uri,
+      headers =
+        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+    )
+
+  val decoderError: DecodingFailure => DecodeFailure =
     failure =>
       InvalidMessageBodyFailure(
         s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}"
       )
 
-  private[impl] def decodeResponseOrFailOpt[F[_]: Concurrent, A: Decoder](
+  def decodeResponseOrFailOpt[F[_]: Concurrent, A: Decoder](
       request: Request[F],
       responseR: Resource[F, Response[F]],
       toCursor: Json => ACursor,
@@ -76,7 +89,7 @@ private[impl] object DecodeUtils {
         }
     }
 
-  private[impl] def decodeResponseOrFail[F[_]: Concurrent, A: Decoder](
+  def decodeResponseOrFail[F[_]: Concurrent, A: Decoder](
       request: Request[F],
       responseR: Resource[F, Response[F]],
       toCursor: Json => ACursor,
@@ -98,7 +111,7 @@ private[impl] object DecodeUtils {
         )
       })
 
-  private[impl] def decodeLoginOrFail[F[_]: Concurrent](
+  def decodeLoginOrFail[F[_]: Concurrent](
       request: Request[F],
       response: Resource[F, Response[F]],
       extra: Option[String]
@@ -111,7 +124,7 @@ private[impl] object DecodeUtils {
       decoderError
     )
 
-  private[impl] def expectSuccessOrFail[F[_]: Concurrent](
+  def expectSuccessOrFail[F[_]: Concurrent](
       request: Request[F],
       response: Response[F],
       extra: Option[String]

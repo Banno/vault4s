@@ -328,23 +328,29 @@ object VaultClient {
       vaultConfig match {
         case role: VaultConfig.AppRole =>
           role.secretId match {
-            case None => LoginApi.login(client, role.vaultUri)(role.roleId)
+            case None => LoginApi.login(client, role.vaultUri, role.roleId)
             case Some(secretId) =>
-              LoginApi.loginAppRoleAndSecretId(client, role.vaultUri)(
+              LoginApi.loginAppRoleAndSecretId(
+                client,
+                role.vaultUri,
                 role.roleId,
                 secretId
               )
           }
         case k8s: VaultConfig.K8s =>
-          LoginApi.loginKubernetes(client, k8s.vaultUri)(
+          LoginApi.loginKubernetes(
+            client,
+            k8s.vaultUri,
             k8s.roleId,
             k8s.jwt,
             k8s.mountPoint
           )
         case gitHub: VaultConfig.GitHub =>
-          LoginApi.loginGitHub(client, gitHub.vaultUri)(gitHub.gitHubToken)
+          LoginApi.loginGitHub(client, gitHub.vaultUri, gitHub.gitHubToken)
         case uap: VaultConfig.UsernameAndPassword =>
-          LoginApi.loginUserPass(client, uap.vaultUri)(
+          LoginApi.loginUserPass(
+            client,
+            uap.vaultUri,
             uap.username,
             uap.username
           )
@@ -359,7 +365,9 @@ object VaultClient {
   ): F[VaultToken] =
     retryUntilConsistent(
       leaseConfig,
-      LeaseApi.renewSelfToken(client, vaultConfig.vaultUri)(
+      LeaseApi.renewSelfToken(
+        client,
+        vaultConfig.vaultUri,
         vaultToken,
         vaultConfig.tokenLeaseExtension
       )
@@ -373,7 +381,7 @@ object VaultClient {
   ): F[Unit] =
     retryUntilConsistent(
       leaseConfig,
-      LeaseApi.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
+      LeaseApi.revokeSelfToken(client, vaultConfig.vaultUri, vaultToken)
     ).recoverWith {
       case VaultRequestError(
             _,
@@ -420,9 +428,6 @@ object VaultClient {
   ) extends VaultClient[F] {
     override protected def applicative: Applicative[F] = Async[F]
 
-    private val tokenRef: RefSource[F, String] =
-      vaultTokenRef.map(_.clientToken)
-
     private def retryOnPreconditionFailed[A](fa: F[A]): F[A] =
       retryUntilConsistent(consistencyConfig, fa)
 
@@ -433,8 +438,8 @@ object VaultClient {
 
     override def readSecret[A: Decoder](secretPath: Path): F[VaultSecret[A]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          SecretApi.readSecret[F, A](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.readSecret[F, A](client, vaultUri, _, secretPath)
         )
       }
 
@@ -449,8 +454,8 @@ object VaultClient {
 
     override def listSecrets(secretPath: Path): F[VaultKeys] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          SecretApi.listSecrets[F](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.listSecrets[F](client, vaultUri, _, secretPath)
         )
       }
 
@@ -465,9 +470,9 @@ object VaultClient {
         payload: A
     ): F[VaultSecret[B]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
+        vaultTokenRef.get.flatMap(
           SecretApi
-            .generateSecret[F, A, B](client, vaultUri)(_, secretPath, payload)
+            .generateSecret[F, A, B](client, vaultUri, _, secretPath, payload)
         )
       }
 
@@ -476,8 +481,8 @@ object VaultClient {
 
     override def deleteSecret(secretPath: Path): F[Unit] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          SecretApi.deleteSecret[F](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.deleteSecret[F](client, vaultUri, _, secretPath)
         )
       }
 
@@ -486,15 +491,15 @@ object VaultClient {
         newLeaseDuration: FiniteDuration
     ): F[VaultSecretRenewal] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          LeaseApi.renewLease[F](client, vaultUri)(leaseId, newLeaseDuration, _)
+        vaultTokenRef.get.flatMap(
+          LeaseApi.renewLease[F](client, vaultUri, leaseId, newLeaseDuration, _)
         )
       }
 
     override def revokeLease(leaseId: String): F[Unit] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          LeaseApi.revokeLease[F](client, vaultUri)(_, leaseId)
+        vaultTokenRef.get.flatMap(
+          LeaseApi.revokeLease[F](client, vaultUri, _, leaseId)
         )
       }
 
@@ -509,8 +514,8 @@ object VaultClient {
         payload: CertificateRequest
     ): F[VaultSecret[CertificateData]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          SecretApi.generateSecret(client, vaultUri)(_, secretPath, payload)
+        vaultTokenRef.get.flatMap(
+          SecretApi.generateSecret(client, vaultUri, _, secretPath, payload)
         )
       }
 

@@ -28,6 +28,8 @@ final case class VaultToken(
 )
 
 object VaultToken {
+  def wrap(clientToken: String): VaultToken =
+    VaultToken(clientToken, Long.MaxValue, false)
 
   implicit val vaultTokenDecoder: Decoder[VaultToken] =
     Decoder.instance[VaultToken] { c =>

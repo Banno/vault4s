@@ -20,14 +20,15 @@ import cats.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.banno.vault.Vault
-import com.banno.vault.impl.DecodeUtils.*
+import com.banno.vault.impl.Utils.*
 import com.banno.vault.models.*
 import io.circe.*
+import io.circe.syntax.*
 import org.http4s.*
+import org.http4s.Method.{POST, PUT}
 import org.http4s.circe.*
 import org.http4s.client.*
 import org.http4s.implicits.*
-import org.typelevel.ci.CIString
 
 import scala.concurrent.duration.*
 
@@ -35,27 +36,30 @@ private[vault] object LeaseApi {
 
   /** https://www.vaultproject.io/api/system/leases.html#renew-lease
     */
-  def renewLease[F[_]](client: Client[F], vaultUri: Uri)(
+  def renewLease[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       leaseId: String,
       newLeaseDuration: FiniteDuration,
-      token: String
-  )(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
-    val request = Request[F](
-      method = Method.PUT,
-      uri = vaultUri.withPath(path"/v1/sys/leases/renew"),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
-    ).withEntity(
-      Json.obj(
-        ("lease_id", Json.fromString(leaseId)),
-        ("increment", Json.fromLong(newLeaseDuration.toSeconds))
+      token: VaultToken
+  ): F[VaultSecretRenewal] = {
+    val request =
+      authedRequest[F](
+        PUT,
+        vaultUri.withPath(path"/v1/sys/leases/renew"),
+        token
+      ).withEntity(
+        Json.obj(
+          "lease_id" := leaseId,
+          "increment" := newLeaseDuration.toSeconds
+        )
       )
-    )
 
     decodeResponseOrFail[F, VaultSecretRenewal](
       request,
       client.run(request),
       _.hcursor,
-      s"tokenLength=${token.length}".some,
+      s"tokenLength=${token.clientToken.length}".some,
       df =>
         InvalidMessageBodyFailure(
           "Could not decode vault lease renew response",
@@ -66,22 +70,21 @@ private[vault] object LeaseApi {
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
-  def renewSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
+  def renewSelfToken[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       token: VaultToken,
       newLeaseDuration: FiniteDuration
-  )(implicit F: Concurrent[F]): F[VaultToken] =
+  ): F[VaultToken] =
     if (!token.renewable)
       Vault.NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
     else {
-      val request = Request[F](
-        method = Method.POST,
-        uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-        headers =
-          Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+      val request = authedRequest[F](
+        POST,
+        vaultUri / "v1" / "auth" / "token" / "renew-self",
+        token
       ).withEntity(
-        Json.obj(
-          ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
-        )
+        Json.obj("increment" := s"${newLeaseDuration.toSeconds}s")
       )
 
       decodeResponseOrFail[F, VaultToken](
@@ -99,14 +102,15 @@ private[vault] object LeaseApi {
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
     */
-  def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
+  def revokeSelfToken[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
       token: VaultToken
-  )(implicit F: Concurrent[F]): F[Unit] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
-      headers =
-        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
+  ): F[Unit] = {
+    val request = authedRequest[F](
+      POST,
+      vaultUri / "v1" / "auth" / "token" / "revoke-self",
+      token
     )
 
     client
@@ -122,15 +126,19 @@ private[vault] object LeaseApi {
 
   /** https://www.vaultproject.io/api/system/leases.html#revoke-lease
     */
-  def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(
-      clientToken: String,
+  def revokeLease[F[_]: Concurrent](
+      client: Client[F],
+      vaultUri: Uri,
+      token: VaultToken,
       leaseId: String
-  )(implicit F: Concurrent[F]): F[Unit] = {
-    val request = Request[F](
-      method = Method.PUT,
-      uri = vaultUri.withPath(path"/v1/sys/leases/revoke"),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
-    ).withEntity(Json.obj("lease_id" -> Json.fromString(leaseId)))
+  ): F[Unit] = {
+    val request = authedRequest[F](
+      PUT,
+      vaultUri.withPath(path"/v1/sys/leases/revoke"),
+      token
+    ).withEntity(
+      Json.obj("lease_id" := leaseId)
+    )
 
     client
       .run(request)
@@ -138,7 +146,7 @@ private[vault] object LeaseApi {
         expectSuccessOrFail(
           request,
           _,
-          s"tokenLength=${clientToken.length}".some
+          s"tokenLength=${token.clientToken.length}".some
         )
       )
   }

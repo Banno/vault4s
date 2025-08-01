@@ -165,7 +165,8 @@ class VaultSpec
   val validUsername: String = UUID.randomUUID().toString
   val validPassword: String = UUID.randomUUID().toString
 
-  val clientToken: String = UUID.randomUUID().toString
+  val vaultToken: VaultToken = VaultToken.wrap(UUID.randomUUID().toString)
+  val clientToken: String = vaultToken.clientToken
   val leaseDuration: Long = Random.nextLong()
   val leaseId: String = UUID.randomUUID().toString
   val renewable: Boolean = Random.nextBoolean()
@@ -436,14 +437,14 @@ class VaultSpec
 
   test("login works as expected when sending a valid roleId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
-      LoginApi.login(mockClient, uri)(validRoleId).assertEquals(validToken)
+      LoginApi.login(mockClient, uri, validRoleId).assertEquals(validToken)
     }
   }
 
   test("login should fail when sending an invalid roleId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .login(mockClient, uri)(UUID.randomUUID().toString)
+        .login(mockClient, uri, UUID.randomUUID().toString)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
@@ -457,7 +458,7 @@ class VaultSpec
   test("login should fail when the response is not valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .login(mockClient, uri)(invalidJSONRoleId)
+        .login(mockClient, uri, invalidJSONRoleId)
         .attempt
         .flatMap {
           case Left(
@@ -476,7 +477,7 @@ class VaultSpec
   test("login should fail when the response doesn't contains a token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .login(mockClient, uri)(roleIdWithoutToken)
+        .login(mockClient, uri, roleIdWithoutToken)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -493,7 +494,7 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .login(mockClient, uri)(roleIdWithoutLease)
+        .login(mockClient, uri, roleIdWithoutLease)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -510,7 +511,7 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(validRoleId, validSecretId)
+        .loginAppRoleAndSecretId(mockClient, uri, validRoleId, validSecretId)
         .assertEquals(altValidToken)
     }
   }
@@ -518,7 +519,9 @@ class VaultSpec
   test("loginAppRoleAndSecretId should fail when sending an invalid roleId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(
+        .loginAppRoleAndSecretId(
+          mockClient,
+          uri,
           UUID.randomUUID().toString,
           validSecretId
         )
@@ -535,7 +538,9 @@ class VaultSpec
   test("loginAppRoleAndSecretId should fail when sending an invalid secretId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(
+        .loginAppRoleAndSecretId(
+          mockClient,
+          uri,
           validRoleId,
           UUID.randomUUID().toString
         )
@@ -555,7 +560,9 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(
+        .loginAppRoleAndSecretId(
+          mockClient,
+          uri,
           invalidJSONRoleId,
           validSecretId
         )
@@ -579,7 +586,9 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(
+        .loginAppRoleAndSecretId(
+          mockClient,
+          uri,
           roleIdWithoutToken,
           validSecretId
         )
@@ -599,7 +608,9 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginAppRoleAndSecretId(mockClient, uri)(
+        .loginAppRoleAndSecretId(
+          mockClient,
+          uri,
           roleIdWithoutLease,
           validSecretId
         )
@@ -617,7 +628,9 @@ class VaultSpec
   test("loginKubernetes works as expected when sending valid role and jwt") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(
+        .loginKubernetes(
+          mockClient,
+          uri,
           validKubernetesRole,
           validKubernetesJwt
         )
@@ -628,7 +641,9 @@ class VaultSpec
   test("loginKubernetes respects alternate mount points") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(
+        .loginKubernetes(
+          mockClient,
+          uri,
           validKubernetesRole,
           validKubernetesJwt,
           path"/auth/kubernetes2"
@@ -640,7 +655,9 @@ class VaultSpec
   test("loginKubernetes should fail when sending an invalid roleId") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(
+        .loginKubernetes(
+          mockClient,
+          uri,
           UUID.randomUUID().toString,
           validKubernetesJwt
         )
@@ -657,7 +674,7 @@ class VaultSpec
   test("loginKubernetes should fail when the response is not a valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(invalidJSONRoleId, validKubernetesJwt)
+        .loginKubernetes(mockClient, uri, invalidJSONRoleId, validKubernetesJwt)
         .attempt
         .flatMap {
           case Left(
@@ -678,7 +695,9 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(
+        .loginKubernetes(
+          mockClient,
+          uri,
           roleIdWithoutToken,
           validKubernetesJwt
         )
@@ -698,7 +717,9 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginKubernetes(mockClient, uri)(
+        .loginKubernetes(
+          mockClient,
+          uri,
           roleIdWithoutLease,
           validKubernetesJwt
         )
@@ -716,7 +737,7 @@ class VaultSpec
   test("loginGitHub works as expected when sending a valid GitHub token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginGitHub(mockClient, uri)(validGitHubToken)
+        .loginGitHub(mockClient, uri, validGitHubToken)
         .assertEquals(validToken)
     }
   }
@@ -724,7 +745,7 @@ class VaultSpec
   test("loginGitHub should fail when sending an invalid GitHub token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginGitHub(mockClient, uri)(UUID.randomUUID().toString)
+        .loginGitHub(mockClient, uri, UUID.randomUUID().toString)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: VaultApiError))) =>
@@ -738,7 +759,7 @@ class VaultSpec
   test("loginGitHub should fail when the response is not valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginGitHub(mockClient, uri)(invalidJSONRoleId)
+        .loginGitHub(mockClient, uri, invalidJSONRoleId)
         .attempt
         .flatMap {
           case Left(
@@ -757,7 +778,7 @@ class VaultSpec
   test("loginGitHub should fail when the response doesn't contains a token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginGitHub(mockClient, uri)(roleIdWithoutToken)
+        .loginGitHub(mockClient, uri, roleIdWithoutToken)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -774,7 +795,7 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginGitHub(mockClient, uri)(roleIdWithoutLease)
+        .loginGitHub(mockClient, uri, roleIdWithoutLease)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -791,7 +812,7 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(validUsername, validPassword)
+        .loginUserPass(mockClient, uri, validUsername, validPassword)
         .assertEquals(validToken)
     }
   }
@@ -799,7 +820,9 @@ class VaultSpec
   test("loginUserPass should fail when sending an invalid username") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(
+        .loginUserPass(
+          mockClient,
+          uri,
           UUID.randomUUID().toString,
           validPassword
         )
@@ -816,7 +839,9 @@ class VaultSpec
   test("loginUserPass should fail when sending an invalid password") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(
+        .loginUserPass(
+          mockClient,
+          uri,
           validUsername,
           UUID.randomUUID().toString
         )
@@ -833,7 +858,7 @@ class VaultSpec
   test("loginUserPass should fail when the response is not valid JSON") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(invalidJSONRoleId, validPassword)
+        .loginUserPass(mockClient, uri, invalidJSONRoleId, validPassword)
         .attempt
         .flatMap {
           case Left(
@@ -852,7 +877,7 @@ class VaultSpec
   test("loginUserPass should fail when the response doesn't contains a token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(roleIdWithoutToken, validPassword)
+        .loginUserPass(mockClient, uri, roleIdWithoutToken, validPassword)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -869,7 +894,7 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       LoginApi
-        .loginUserPass(mockClient, uri)(roleIdWithoutLease, validPassword)
+        .loginUserPass(mockClient, uri, roleIdWithoutLease, validPassword)
         .attempt
         .flatMap {
           case Left(e @ VaultRequestError(message, Some(_: DecodeFailure))) =>
@@ -919,8 +944,10 @@ class VaultSpec
   ) {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       SecretApi
-        .readSecret[IO, Boolean](mockClient, uri)(
-          clientToken,
+        .readSecret[IO, Boolean](
+          mockClient,
+          uri,
+          vaultToken,
           path"secret" / "do/not/do/this" / "value"
         )
         .map(_.data)

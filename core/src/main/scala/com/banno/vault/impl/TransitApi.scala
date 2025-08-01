@@ -20,14 +20,14 @@ import cats.Applicative
 import cats.data.NonEmptyList
 import cats.effect.Concurrent
 import cats.syntax.all.*
-import com.banno.vault.impl.RequestUtils.*
-import com.banno.vault.models.{VaultRequestError, VaultSecret}
+import com.banno.vault.impl.Utils.*
+import com.banno.vault.models.{VaultRequestError, VaultSecret, VaultToken}
 import com.banno.vault.transit.*
-import org.http4s.Method.GET
+import org.http4s.Method.{GET, POST}
+import org.http4s.Uri
 import org.http4s.Uri.Path
 import org.http4s.client.Client
 import org.http4s.syntax.literals.*
-import org.http4s.{Headers, Request, Uri}
 
 private[vault] object TransitApi {
 
@@ -38,28 +38,24 @@ private[vault] object TransitApi {
    * the v1 prefix is specified in https://www.vaultproject.io/api/overview
    */
   private[this] def readKeyUri(vaultUri: Uri, key: Path): Uri =
-    vaultUri.withPath(path"/v1/transit/keys/".concat(key))
+    vaultUri.withPath(path"/v1/transit/keys/" |+| key)
 
   private[this] def encryptKeyUri(vaultUri: Uri, key: Path): Uri =
-    vaultUri.withPath(path"/v1/transit/encrypt/".concat(key))
+    vaultUri.withPath(path"/v1/transit/encrypt/" |+| key)
 
   private[this] def decryptKeyUri(vaultUri: Uri, key: Path): Uri =
-    vaultUri.withPath(path"/v1/transit/decrypt/".concat(key))
+    vaultUri.withPath(path"/v1/transit/decrypt/" |+| key)
 
   /** https://www.vaultproject.io/api/secret/transit/index.html#read-key
     */
   def keyDetails[F[_]: Concurrent](
       client: Client[F],
       vaultUri: Uri,
-      token: String,
+      token: VaultToken,
       key: Path
   ): F[KeyDetails] = {
-    val request =
-      Request[F](
-        method = GET,
-        uri = readKeyUri(vaultUri, key),
-        headers = tokenHeader(token)
-      )
+    val request = authedRequest[F](GET, readKeyUri(vaultUri, key), token)
+
     client.expect[KeyDetails](request).adaptErr { e =>
       VaultRequestError(
         request,
@@ -74,16 +70,15 @@ private[vault] object TransitApi {
   def encrypt[F[_]: Concurrent](
       client: Client[F],
       vaultUri: Uri,
-      token: String,
+      token: VaultToken,
       key: Path,
       plaintext: PlainText,
       context: Option[Context]
   ): F[CipherText] = {
-    val request = postOf(
-      encryptKeyUri(vaultUri, key),
-      EncryptRequest(plaintext, context),
-      tokenHeader(token)
-    )
+    val request =
+      authedRequest[F](POST, encryptKeyUri(vaultUri, key), token)
+        .withEntity(EncryptRequest(plaintext, context))
+
     for {
       response <- client.expect[EncryptResponse](request).adaptErr { e =>
         VaultRequestError(
@@ -101,13 +96,14 @@ private[vault] object TransitApi {
   def encryptBatch[F[_]: Concurrent](
       client: Client[F],
       vaultUri: Uri,
-      token: String,
+      token: VaultToken,
       key: Path,
       payload: EncryptBatchRequest,
       opNameForErrors: String
   ): F[NonEmptyList[Either[TransitError, CipherText]]] = {
-    val request =
-      postOf(encryptKeyUri(vaultUri, key), payload, tokenHeader(token))
+    val request = authedRequest[F](POST, encryptKeyUri(vaultUri, key), token)
+      .withEntity(payload)
+
     for {
       results <-
         client
@@ -136,14 +132,15 @@ private[vault] object TransitApi {
   def decrypt[F[_]: Concurrent](
       client: Client[F],
       vaultUri: Uri,
-      token: String,
+      token: VaultToken,
       key: Path,
       cipherText: CipherText,
       contextOpt: Option[Context]
   ): F[PlainText] = {
     val decryptReq = DecryptRequest(cipherText, contextOpt)
-    val request =
-      postOf(decryptKeyUri(vaultUri, key), decryptReq, tokenHeader(token))
+    val request = authedRequest[F](POST, decryptKeyUri(vaultUri, key), token)
+      .withEntity(decryptReq)
+
     for {
       response <- client.expect[DecryptResponse](request).adaptErr { e =>
         val showCtx = contextOpt.fold("none")(_.context.value)
@@ -161,13 +158,14 @@ private[vault] object TransitApi {
   def decryptBatch[F[_]: Concurrent](
       client: Client[F],
       vaultUri: Uri,
-      token: String,
+      token: VaultToken,
       key: Path,
       payload: DecryptBatchRequest,
       opNameForErrors: String
   ): F[NonEmptyList[Either[TransitError, PlainText]]] = {
-    val request =
-      postOf(decryptKeyUri(vaultUri, key), payload, tokenHeader(token))
+    val request = authedRequest[F](POST, decryptKeyUri(vaultUri, key), token)
+      .withEntity(payload)
+
     for {
       results <-
         client

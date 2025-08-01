@@ -48,7 +48,7 @@ object Vault {
   def login[F[_]](client: Client[F], vaultUri: Uri)(
       roleId: String
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LoginApi.login(client, vaultUri)(roleId)
+    LoginApi.login(client, vaultUri, roleId)
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
     */
@@ -56,7 +56,7 @@ object Vault {
       roleId: String,
       secretId: String
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LoginApi.loginAppRoleAndSecretId(client, vaultUri)(roleId, secretId)
+    LoginApi.loginAppRoleAndSecretId(client, vaultUri, roleId, secretId)
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     *
@@ -69,7 +69,7 @@ object Vault {
       jwt: String,
       mountPoint: Uri.Path = path"/auth/kubernetes"
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LoginApi.loginKubernetes(client, vaultUri)(role, jwt, mountPoint)
+    LoginApi.loginKubernetes(client, vaultUri, role, jwt, mountPoint)
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     */
@@ -88,7 +88,7 @@ object Vault {
   def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
       token: String
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LoginApi.loginGitHub(client, vaultUri)(token)
+    LoginApi.loginGitHub(client, vaultUri, token)
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
     */
@@ -96,7 +96,7 @@ object Vault {
       username: String,
       password: String
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LoginApi.loginUserPass(client, vaultUri)(username, password)
+    LoginApi.loginUserPass(client, vaultUri, username, password)
 
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
@@ -104,8 +104,10 @@ object Vault {
       token: String,
       secretPath: String
   )(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] =
-    SecretApi.readSecret(client, vaultUri)(
-      token,
+    SecretApi.readSecret(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
       Uri.Path.unsafeFromString(secretPath)
     )
 
@@ -116,8 +118,10 @@ object Vault {
       token: String,
       secretPath: String
   )(implicit F: Concurrent[F]): F[VaultKeys] =
-    SecretApi.listSecrets(client, vaultUri)(
-      token,
+    SecretApi.listSecrets(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
       Uri.Path.unsafeFromString(secretPath)
     )
 
@@ -127,8 +131,10 @@ object Vault {
       token: String,
       secretPath: String
   )(implicit F: Concurrent[F]): F[Unit] =
-    SecretApi.deleteSecret(client, vaultUri)(
-      token,
+    SecretApi.deleteSecret(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
       Uri.Path.unsafeFromString(secretPath)
     )
 
@@ -139,7 +145,13 @@ object Vault {
       newLeaseDuration: FiniteDuration,
       token: String
   )(implicit F: Concurrent[F]): F[VaultSecretRenewal] =
-    LeaseApi.renewLease(client, vaultUri)(leaseId, newLeaseDuration, token)
+    LeaseApi.renewLease(
+      client,
+      vaultUri,
+      leaseId,
+      newLeaseDuration,
+      VaultToken.wrap(token)
+    )
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
@@ -147,14 +159,14 @@ object Vault {
       token: VaultToken,
       newLeaseDuration: FiniteDuration
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    LeaseApi.renewSelfToken(client, vaultUri)(token, newLeaseDuration)
+    LeaseApi.renewSelfToken(client, vaultUri, token, newLeaseDuration)
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
     */
   def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken
   )(implicit F: Concurrent[F]): F[Unit] =
-    LeaseApi.revokeSelfToken(client, vaultUri)(token)
+    LeaseApi.revokeSelfToken(client, vaultUri, token)
 
   /** https://www.vaultproject.io/api/system/leases.html#revoke-lease
     */
@@ -162,7 +174,12 @@ object Vault {
       clientToken: String,
       leaseId: String
   )(implicit F: Concurrent[F]): F[Unit] =
-    LeaseApi.revokeLease(client, vaultUri)(clientToken, leaseId)
+    LeaseApi.revokeLease(
+      client,
+      vaultUri,
+      VaultToken.wrap(clientToken),
+      leaseId
+    )
 
   /** https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
     */
@@ -172,8 +189,10 @@ object Vault {
   )(token: String, secretPath: String, payload: CertificateRequest)(implicit
       F: Concurrent[F]
   ): F[VaultSecret[CertificateData]] =
-    SecretApi.generateSecret(client, vaultUri)(
-      token,
+    SecretApi.generateSecret(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
       Uri.Path.unsafeFromString(secretPath),
       payload
     )
@@ -184,8 +203,10 @@ object Vault {
   )(token: String, secretPath: String, payload: A)(implicit
       F: Concurrent[F]
   ): F[VaultSecret[B]] =
-    SecretApi.generateSecret[F, A, B](client, vaultUri)(
-      token,
+    SecretApi.generateSecret[F, A, B](
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
       Uri.Path.unsafeFromString(secretPath),
       payload
     )
