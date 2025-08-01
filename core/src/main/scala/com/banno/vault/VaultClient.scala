@@ -63,9 +63,8 @@ trait VaultClient[F[_]] {
     * <h3>CAUTION: non-KV2 secrets <i>may</i> expire</h3>
     *
     * Dynamic secrets (like database credentials) are a common example, so if a
-    * secret becomes invalid after a set period of time,
-    * [[VaultClient.VaultClientExtensions.readSecretAndKeep]] may be what is
-    * needed.
+    * secret becomes invalid after a set period of time, `readSecretAndKeep` may
+    * be what is needed.
     *
     * @note
     *   Despite being a prefix common to all secrets, `secret/` does need to
@@ -81,6 +80,8 @@ trait VaultClient[F[_]] {
     *
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+    * @see
+    *   [[VaultClient.VaultClientExtensions.readSecretAndKeep[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecret[A: Decoder](secretPath: Path): F[VaultSecret[A]] =
     readSecret[A](secretPath.renderString)
@@ -90,13 +91,16 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[readSecret[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]]
 
   /** Convenience wrapper for `readSecret`, when the renewal information is not
     * needed.
     * @see
-    *   [[readSecret]]
+    *   [[readSecret[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecretData[A: Decoder](secretPath: Path): F[A] =
     readSecretData[A](secretPath.renderString)
@@ -106,6 +110,9 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[readSecretData[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecretData[A: Decoder](secretPath: String): F[A]
 
@@ -128,6 +135,9 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[listSecrets(secretPath:org\.http4s\.Uri\.Path*]]
     */
   def listSecrets(secretPath: String): F[VaultKeys]
 
@@ -151,6 +161,9 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[createSecret[A,B](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def createSecret[A: Encoder, B: Decoder](
       secretPath: String,
@@ -174,6 +187,9 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[deleteSecret(secretPath:org\.http4s\.Uri\.Path*]]
     */
   def deleteSecret(secretPath: String): F[Unit]
 
@@ -201,6 +217,9 @@ trait VaultClient[F[_]] {
     *
     * As long as the path doesn't contain `/` that should be escaped, this
     * should be fine to continue using.
+    *
+    * @see
+    *   [[generateCertificate(secretPath:org\.http4s\.Uri\.Path*]]
     */
   def generateCertificate(
       secretPath: String,
@@ -631,7 +650,7 @@ object VaultClient {
   implicit class VaultClientExtensions[F[_]](private val vc: VaultClient[F])
       extends AnyVal {
 
-    /** Similar to [[VaultClient.readSecretData]] but calls
+    /** Similar to `VaultClient.readSecretData` but calls
       * [[VaultClient.renewLease]] on a schedule to keep the secret renewed
       * until the resource is closed IF the secret is renewable.
       *
@@ -639,7 +658,7 @@ object VaultClient {
       * happens, a single attempt will be made to re-request the secret.
       *
       * If the secret is not renewable, no attempts to renew will be made, and
-      * the behavior will be the same as if [[VaultClient.readSecret]] were
+      * the behavior will be the same as if `VaultClient.readSecretData` were
       * called and the result wrapped in a static
       * [[cats.effect.kernel.RefSource]].
       *
@@ -661,7 +680,7 @@ object VaultClient {
       *
       * @note
       *   Unless `secretPath` is pointing to a dynamic secret, this provides no
-      *   benefit over [[VaultClient.readSecretData]], so it's worth checking to
+      *   benefit over `VaultClient.readSecretData`, so it's worth checking to
       *   see if this is actually needed.
       * @note
       *   The `/v1` prefix indicates the API version, not the secret engine
@@ -669,12 +688,14 @@ object VaultClient {
       *   use case.
       * @see
       *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+      * @see
+      *   [[VaultClient.readSecretData[A](secretPath:org\.http4s\.Uri\.Path*]]
       * @param secretLeaseExtension
       *   If provided, determines the maximum delay between token lease
       *   refreshes. If omitted, the TTL provided by the secret will be used.
       */
     def readSecretAndKeep[A: Decoder](
-        secretPath: String,
+        secretPath: Path,
         secretLeaseExtension: Option[FiniteDuration]
     )(implicit
         F: Async[F],
@@ -774,5 +795,25 @@ object VaultClient {
           }
         }
     }
+
+    /** A backwards-compatible version of `readSecretAndKeep` that accepts the
+      * path as a string
+      *
+      * As long as the path doesn't contain `/` that should be escaped, this
+      * should be fine to continue using.
+      *
+      * @see
+      *   [[readSecretAndKeep[A](secretPath:org\.http4s\.Uri\.Path*]]
+      */
+    def readSecretAndKeep[A: Decoder](
+        secretPath: String,
+        secretLeaseExtension: Option[FiniteDuration]
+    )(implicit
+        F: Async[F],
+        NEP: NonEmptyParallel[F]
+    ): Resource[F, RefSource[F, A]] = readSecretAndKeep[A](
+      Path.unsafeFromString(secretPath),
+      secretLeaseExtension
+    )
   }
 }
