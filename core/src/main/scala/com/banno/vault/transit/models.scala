@@ -18,9 +18,14 @@ package com.banno.vault.transit
 
 import cats.Eq
 import cats.data.NonEmptyList
-import cats.kernel.instances.all._
-import cats.syntax.eq._
-import io.circe.{Decoder, Encoder, Json, HCursor}
+import cats.effect.kernel.Concurrent
+import cats.kernel.instances.all.*
+import cats.syntax.eq.*
+import com.banno.vault.models.VaultSecret
+import io.circe.{Decoder, Encoder, HCursor, Json}
+import org.http4s.circe.{jsonEncoderOf, jsonOf}
+import org.http4s.{EntityDecoder, EntityEncoder}
+
 import java.time.Instant
 
 final case class KeyName(name: String)
@@ -75,6 +80,8 @@ object KeyDetails {
     }
   }
 
+  implicit def entityDecoder[F[_]: Concurrent]: EntityDecoder[F, KeyDetails] =
+    jsonOf
 }
 
 /** A tagged-like newtype used to indicate that a Base64 value is a plaintext we
@@ -84,9 +91,9 @@ final case class PlainText(plaintext: Base64)
 object PlainText {
   implicit val eqPlainText: Eq[PlainText] =
     Eq.by[PlainText, Base64](_.plaintext)
-  private[transit] implicit val encodePlainText: Encoder[PlainText] =
+  private[vault] implicit val encodePlainText: Encoder[PlainText] =
     Base64.encodeBase64.contramap(_.plaintext)
-  private[transit] implicit val decodePlainText: Decoder[PlainText] =
+  private[vault] implicit val decodePlainText: Decoder[PlainText] =
     Base64.decodeBase64.map(PlainText.apply)
 }
 
@@ -101,9 +108,9 @@ final case class Context(context: Base64)
 object Context {
   implicit val eqContext: Eq[Context] =
     Eq.by[Context, Base64](_.context)
-  private[transit] implicit val encodeContext: Encoder[Context] =
+  private[vault] implicit val encodeContext: Encoder[Context] =
     Base64.encodeBase64.contramap(_.context)
-  private[transit] implicit val decodeContext: Decoder[Context] =
+  private[vault] implicit val decodeContext: Decoder[Context] =
     Base64.decodeBase64.map(Context.apply)
 }
 
@@ -113,9 +120,9 @@ object Context {
   */
 final case class CipherText(ciphertext: String) extends AnyVal
 object CipherText {
-  private[transit] implicit val encodeCipherText: Encoder[CipherText] =
+  private[vault] implicit val encodeCipherText: Encoder[CipherText] =
     Encoder.encodeString.contramap(_.ciphertext)
-  private[transit] implicit val decodeCipherText: Decoder[CipherText] =
+  private[vault] implicit val decodeCipherText: Decoder[CipherText] =
     Decoder.decodeString.map(CipherText.apply)
   implicit val eqCipherText: Eq[CipherText] =
     Eq.by[CipherText, String](_.ciphertext)
@@ -135,10 +142,13 @@ object EncryptRequest {
     Decoder.forProduct2("plaintext", "context")(
       (pt: PlainText, ct: Option[Context]) => EncryptRequest(pt, ct)
     )
+
+  implicit def entityEncoder[F[_]: Concurrent]
+      : EntityEncoder[F, EncryptRequest] = jsonEncoderOf
 }
 
-private[transit] final case class EncryptResult(ciphertext: CipherText)
-private[transit] object EncryptResult {
+private[vault] final case class EncryptResult(ciphertext: CipherText)
+private[vault] object EncryptResult {
   implicit val eqEncryptResult: Eq[EncryptResult] = Eq.by(_.ciphertext)
 
   implicit val encodeEncryptResult: Encoder[EncryptResult] =
@@ -154,20 +164,23 @@ private[transit] object EncryptResult {
     )
 }
 
-private[transit] case class EncryptResponse(data: EncryptResult)
-private[transit] object EncryptResponse {
+private[vault] case class EncryptResponse(data: EncryptResult)
+private[vault] object EncryptResponse {
   implicit val eqEncryptResponse: Eq[EncryptResponse] =
     Eq.by[EncryptResponse, EncryptResult](_.data)
   implicit val encodeEncryptResponse: Encoder[EncryptResponse] =
     Encoder.forProduct1("data")(_.data)
   implicit val decodeEncryptResponse: Decoder[EncryptResponse] =
     Decoder.forProduct1("data")((d: EncryptResult) => EncryptResponse(d))
+
+  implicit def entityDecoder[F[_]: Concurrent]
+      : EntityDecoder[F, EncryptResponse] = jsonOf
 }
 
-private[transit] final case class EncryptBatchRequest(
+private[vault] final case class EncryptBatchRequest(
     batchInput: NonEmptyList[EncryptRequest]
 )
-private[transit] object EncryptBatchRequest {
+private[vault] object EncryptBatchRequest {
   implicit val eqEncryptBatchRequest: Eq[EncryptBatchRequest] =
     Eq.by[EncryptBatchRequest, NonEmptyList[EncryptRequest]](_.batchInput)
   implicit val encodeEncryptBatchRequest: Encoder[EncryptBatchRequest] =
@@ -176,12 +189,15 @@ private[transit] object EncryptBatchRequest {
     Decoder.forProduct1("batch_input")((bi: NonEmptyList[EncryptRequest]) =>
       EncryptBatchRequest(bi)
     )
+
+  implicit def entityEncoder[F[_]: Concurrent]
+      : EntityEncoder[F, EncryptBatchRequest] = jsonEncoderOf
 }
 
-private[transit] final case class EncryptBatchResponse(
+private[vault] final case class EncryptBatchResponse(
     batchResults: NonEmptyList[TransitError.Or[EncryptResult]]
 )
-private[transit] object EncryptBatchResponse {
+private[vault] object EncryptBatchResponse {
   implicit val eqEncryptBatchResponse: Eq[EncryptBatchResponse] =
     Eq.by(_.batchResults)
   implicit val encodeEncryptBatchResponse: Encoder[EncryptBatchResponse] =
@@ -191,13 +207,16 @@ private[transit] object EncryptBatchResponse {
       (br: NonEmptyList[TransitError.Or[EncryptResult]]) =>
         EncryptBatchResponse(br)
     )
+
+  implicit def decoder[F[_]: Concurrent]
+      : EntityDecoder[F, VaultSecret[EncryptBatchResponse]] = jsonOf
 }
 
-private[transit] final case class DecryptRequest(
+private[vault] final case class DecryptRequest(
     ciphertext: CipherText,
     context: Option[Context]
 )
-private[transit] object DecryptRequest {
+private[vault] object DecryptRequest {
   implicit val eqDecryptRequest: Eq[DecryptRequest] =
     Eq.instance { (x: DecryptRequest, y: DecryptRequest) =>
       x.context === y.context && x.ciphertext === y.ciphertext
@@ -212,10 +231,13 @@ private[transit] object DecryptRequest {
     Decoder.forProduct2("ciphertext", "context")(
       (cr: CipherText, ct: Option[Context]) => DecryptRequest(cr, ct)
     )
+
+  implicit def entityEncoder[F[_]: Concurrent]
+      : EntityEncoder[F, DecryptRequest] = jsonEncoderOf
 }
 
-private[transit] final case class DecryptResult(plaintext: PlainText)
-private[transit] object DecryptResult {
+private[vault] final case class DecryptResult(plaintext: PlainText)
+private[vault] object DecryptResult {
   implicit val eqDecryptResponse: Eq[DecryptResult] =
     Eq.by[DecryptResult, PlainText](_.plaintext)
 
@@ -233,8 +255,8 @@ private[transit] object DecryptResult {
     }
 }
 
-private[transit] final case class DecryptResponse(data: DecryptResult)
-private[transit] object DecryptResponse {
+private[vault] final case class DecryptResponse(data: DecryptResult)
+private[vault] object DecryptResponse {
   implicit val eqDecryptResponse: Eq[DecryptResponse] =
     Eq.by[DecryptResponse, DecryptResult](_.data)
 
@@ -242,10 +264,13 @@ private[transit] object DecryptResponse {
     Encoder.forProduct1("data")(_.data)
   implicit val decodeDecryptResponse: Decoder[DecryptResponse] =
     Decoder.forProduct1("data")((d: DecryptResult) => DecryptResponse(d))
+
+  implicit def entityDecoder[F[_]: Concurrent]
+      : EntityDecoder[F, DecryptResponse] = jsonOf
 }
 
 final case class TransitError(error: String)
-private[transit] object TransitError {
+private[vault] object TransitError {
   type Or[A] = Either[TransitError, A]
 
   implicit val eqError: Eq[TransitError] = Eq.by(_.error)
@@ -267,10 +292,10 @@ private[transit] object TransitError {
 
 }
 
-private[transit] final case class DecryptBatchRequest(
+private[vault] final case class DecryptBatchRequest(
     batchInput: NonEmptyList[DecryptRequest]
 )
-private[transit] object DecryptBatchRequest {
+private[vault] object DecryptBatchRequest {
   implicit val eqDecryptBatchRequest: Eq[DecryptBatchRequest] =
     Eq.by[DecryptBatchRequest, NonEmptyList[DecryptRequest]](_.batchInput)
   implicit val encodeDecryptBatchRequest: Encoder[DecryptBatchRequest] =
@@ -280,11 +305,13 @@ private[transit] object DecryptBatchRequest {
       DecryptBatchRequest(bi)
     )
 
+  implicit def entityEncoder[F[_]: Concurrent]
+      : EntityEncoder[F, DecryptBatchRequest] = jsonEncoderOf
 }
-private[transit] final case class DecryptBatchResponse(
+private[vault] final case class DecryptBatchResponse(
     data: DecryptBatchResults
 )
-private[transit] object DecryptBatchResponse {
+private[vault] object DecryptBatchResponse {
   implicit val eqDecryptBatchResponse: Eq[DecryptBatchResponse] =
     Eq.by[DecryptBatchResponse, DecryptBatchResults](_.data)
 
@@ -292,12 +319,15 @@ private[transit] object DecryptBatchResponse {
     Encoder.forProduct1("data")(_.data)
   implicit val decodeDecryptBatchResponse: Decoder[DecryptBatchResponse] =
     Decoder.forProduct1("data")(apply)
+
+  implicit def decoder[F[_]: Concurrent]
+      : EntityDecoder[F, DecryptBatchResponse] = jsonOf
 }
 
-private[transit] final case class DecryptBatchResults(
+private[vault] final case class DecryptBatchResults(
     batchResults: NonEmptyList[TransitError.Or[DecryptResult]]
 )
-private[transit] object DecryptBatchResults {
+private[vault] object DecryptBatchResults {
   implicit val eqDecryptBatchResults: Eq[DecryptBatchResults] =
     Eq.by[DecryptBatchResults, NonEmptyList[TransitError.Or[DecryptResult]]](
       _.batchResults

@@ -212,6 +212,11 @@ trait VaultClient[F[_]] {
   /** Change the effect type
     */
   def mapK[G[_]: Applicative](fg: F ~> G): VaultClient[G]
+
+  /** Allows inspection of the client token, as well as building other algebras
+    * backed by this client
+    */
+  def clientToken: F[VaultToken] = applicative.pure(VaultToken("", 0L, false))
 }
 
 object VaultClient {
@@ -238,7 +243,6 @@ object VaultClient {
       .make(loginWithRetry(client, vaultConfig, consistencyConfig))(
         revokeWithRetry(_, client, vaultConfig, consistencyConfig)
       )
-      .map(_.clientToken)
       .evalMap(Ref[F].of(_))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
 
@@ -287,7 +291,6 @@ object VaultClient {
           .foreverM
           .background
       }
-      .map(ref => (ref: RefSource[F, VaultToken]).map(_.clientToken))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
   }
 
@@ -412,13 +415,18 @@ object VaultClient {
   private class Default[F[_]: Async](
       client: Client[F],
       vaultUri: Uri,
-      tokenRef: RefSource[F, String],
+      vaultTokenRef: RefSource[F, VaultToken],
       consistencyConfig: ConsistencyConfig
   ) extends VaultClient[F] {
     override protected def applicative: Applicative[F] = Async[F]
 
+    private val tokenRef: RefSource[F, String] =
+      vaultTokenRef.map(_.clientToken)
+
     private def retryOnPreconditionFailed[A](fa: F[A]): F[A] =
       retryUntilConsistent(consistencyConfig, fa)
+
+    override def clientToken: F[VaultToken] = vaultTokenRef.get
 
     override def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]] =
       readSecret[A](Path.unsafeFromString(secretPath))
@@ -580,6 +588,8 @@ object VaultClient {
 
       override def mapK[H[_]: Applicative](gh: G ~> H): VaultClient[H] =
         VaultClient.mapK(this, gh)
+
+      override def clientToken: G[VaultToken] = fg(vault.clientToken)
     }
 
   final class CurrentlyInconsistent(val errors: NonEmptyChain[Throwable])
