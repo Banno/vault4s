@@ -143,8 +143,8 @@ object EncryptRequest {
       (pt: PlainText, ct: Option[Context]) => EncryptRequest(pt, ct)
     )
 
-  implicit def entityEncoder[F[_]: Concurrent]
-      : EntityEncoder[F, EncryptRequest] = jsonEncoderOf
+  implicit def entityEncoder[F[_]]: EntityEncoder[F, EncryptRequest] =
+    jsonEncoderOf
 }
 
 private[vault] final case class EncryptResult(ciphertext: CipherText)
@@ -190,8 +190,8 @@ private[vault] object EncryptBatchRequest {
       EncryptBatchRequest(bi)
     )
 
-  implicit def entityEncoder[F[_]: Concurrent]
-      : EntityEncoder[F, EncryptBatchRequest] = jsonEncoderOf
+  implicit def entityEncoder[F[_]]: EntityEncoder[F, EncryptBatchRequest] =
+    jsonEncoderOf
 }
 
 private[vault] final case class EncryptBatchResponse(
@@ -232,8 +232,8 @@ private[vault] object DecryptRequest {
       (cr: CipherText, ct: Option[Context]) => DecryptRequest(cr, ct)
     )
 
-  implicit def entityEncoder[F[_]: Concurrent]
-      : EntityEncoder[F, DecryptRequest] = jsonEncoderOf
+  implicit def entityEncoder[F[_]]: EntityEncoder[F, DecryptRequest] =
+    jsonEncoderOf
 }
 
 private[vault] final case class DecryptResult(plaintext: PlainText)
@@ -305,8 +305,8 @@ private[vault] object DecryptBatchRequest {
       DecryptBatchRequest(bi)
     )
 
-  implicit def entityEncoder[F[_]: Concurrent]
-      : EntityEncoder[F, DecryptBatchRequest] = jsonEncoderOf
+  implicit def entityEncoder[F[_]]: EntityEncoder[F, DecryptBatchRequest] =
+    jsonEncoderOf
 }
 private[vault] final case class DecryptBatchResponse(
     data: DecryptBatchResults

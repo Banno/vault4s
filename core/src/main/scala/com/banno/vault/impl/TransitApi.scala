@@ -56,7 +56,7 @@ private[vault] object TransitApi {
   ): F[KeyDetails] = {
     val request = authedRequest[F](GET, readKeyUri(vaultUri, key), token)
 
-    client.expect[KeyDetails](request).adaptErr { e =>
+    client.expect[KeyDetails](request).adaptErr { case e =>
       VaultRequestError(
         request,
         e.some,
@@ -80,7 +80,7 @@ private[vault] object TransitApi {
         .withEntity(EncryptRequest(plaintext, context))
 
     for {
-      response <- client.expect[EncryptResponse](request).adaptErr { e =>
+      response <- client.expect[EncryptResponse](request).adaptErr { case e =>
         VaultRequestError(
           request,
           e.some,
@@ -109,7 +109,7 @@ private[vault] object TransitApi {
         client
           .expect[VaultSecret[EncryptBatchResponse]](request)
           .map(_.data.batchResults)
-          .adaptErr { e =>
+          .adaptErr { case e =>
             VaultRequestError(
               request,
               e.some,
@@ -142,7 +142,7 @@ private[vault] object TransitApi {
       .withEntity(decryptReq)
 
     for {
-      response <- client.expect[DecryptResponse](request).adaptErr { e =>
+      response <- client.expect[DecryptResponse](request).adaptErr { case e =>
         val showCtx = contextOpt.fold("none")(_.context.value)
         VaultRequestError(
           request,
@@ -171,7 +171,7 @@ private[vault] object TransitApi {
         client
           .expect[DecryptBatchResponse](request)
           .map(_.data.batchResults)
-          .adaptErr { e =>
+          .adaptErr { case e =>
             VaultRequestError(
               request,
               e.some,

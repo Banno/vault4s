@@ -16,7 +16,6 @@
 
 package com.banno.vault.impl
 
-import cats.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.banno.vault.impl.Utils.*
@@ -24,7 +23,6 @@ import com.banno.vault.models.*
 import io.circe.*
 import io.circe.syntax.*
 import org.http4s.*
-import org.http4s.Uri.Path
 import org.http4s.circe.*
 import org.http4s.client.*
 import org.http4s.implicits.*
