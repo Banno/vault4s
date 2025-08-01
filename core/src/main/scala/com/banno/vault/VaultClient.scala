@@ -81,7 +81,7 @@ trait VaultClient[F[_]] {
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
     * @see
-    *   [[VaultClient.VaultClientExtensions.readSecretAndKeep[A](secretPath:org\.http4s\.Uri\.Path*]]
+    *   [[VaultClient.VaultClientExtensions.readSecretPathAndKeep]]
     */
   def readSecret[A: Decoder](secretPath: Path): F[VaultSecret[A]] =
     readSecret[A](secretPath.renderString)
@@ -694,7 +694,7 @@ object VaultClient {
       *   If provided, determines the maximum delay between token lease
       *   refreshes. If omitted, the TTL provided by the secret will be used.
       */
-    def readSecretAndKeep[A: Decoder](
+    def readSecretPathAndKeep[A: Decoder](
         secretPath: Path,
         secretLeaseExtension: Option[FiniteDuration]
     )(implicit
@@ -803,7 +803,7 @@ object VaultClient {
       * should be fine to continue using.
       *
       * @see
-      *   [[readSecretAndKeep[A](secretPath:org\.http4s\.Uri\.Path*]]
+      *   [[readSecretPathAndKeep]]
       */
     def readSecretAndKeep[A: Decoder](
         secretPath: String,
@@ -811,7 +811,7 @@ object VaultClient {
     )(implicit
         F: Async[F],
         NEP: NonEmptyParallel[F]
-    ): Resource[F, RefSource[F, A]] = readSecretAndKeep[A](
+    ): Resource[F, RefSource[F, A]] = readSecretPathAndKeep[A](
       Path.unsafeFromString(secretPath),
       secretLeaseExtension
     )
