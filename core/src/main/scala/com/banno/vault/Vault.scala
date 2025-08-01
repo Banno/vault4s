@@ -19,15 +19,13 @@ package com.banno.vault
 import cats.*
 import cats.effect.*
 import cats.syntax.all.*
+import com.banno.vault.impl.{LeaseApi, LoginApi, SecretApi}
 import com.banno.vault.models.*
 import fs2.Stream
-import io.circe.syntax.*
 import io.circe.*
 import org.http4s.*
-import org.http4s.circe.*
 import org.http4s.client.*
 import org.http4s.implicits.*
-import org.typelevel.ci.CIString
 
 import scala.concurrent.duration.*
 
@@ -49,41 +47,16 @@ object Vault {
     */
   def login[F[_]](client: Client[F], vaultUri: Uri)(
       roleId: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "approle" / "login"
-    ).withEntity(Json.obj(("role_id", Json.fromString(roleId))))
-
-    decodeLoginOrFail[F](
-      request,
-      client.run(request),
-      s"roleId=$roleId".some
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    LoginApi.login(client, vaultUri)(roleId)
 
   /** https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
     */
   def loginAppRoleAndSecretId[F[_]](client: Client[F], vaultUri: Uri)(
       roleId: String,
       secretId: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "approle" / "login"
-    ).withEntity(
-      Json.obj(
-        "role_id" := roleId,
-        "secret_id" := secretId
-      )
-    )
-
-    decodeLoginOrFail[F](
-      request,
-      client.run(request),
-      s"roleId=$roleId, secretId=XXXX".some
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    LoginApi.loginAppRoleAndSecretId(client, vaultUri)(roleId, secretId)
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     *
@@ -95,23 +68,8 @@ object Vault {
       role: String,
       jwt: String,
       mountPoint: Uri.Path = path"/auth/kubernetes"
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri.withPath(path"/v1" |+| mountPoint |+| path"/login")
-    ).withEntity(
-      Json.obj(
-        ("role", Json.fromString(role)),
-        ("jwt", Json.fromString(jwt))
-      )
-    )
-
-    decodeLoginOrFail[F](
-      request,
-      client.run(request),
-      s"role=$role".some // don't expose jwt in error
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    LoginApi.loginKubernetes(client, vaultUri)(role, jwt, mountPoint)
 
   /** https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     */
@@ -129,60 +87,27 @@ object Vault {
     */
   def loginGitHub[F[_]](client: Client[F], vaultUri: Uri)(
       token: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "github" / "login"
-    ).withEntity(Json.obj(("token", Json.fromString(token))))
-
-    decodeLoginOrFail[F](
-      request,
-      client.run(request),
-      none // don't expose token in error
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    LoginApi.loginGitHub(client, vaultUri)(token)
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/userpass
     */
   def loginUserPass[F[_]](client: Client[F], vaultUri: Uri)(
       username: String,
       password: String
-  )(implicit F: Concurrent[F]): F[VaultToken] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "userpass" / "login" / username
-    ).withEntity(Json.obj("password" := password))
-
-    decodeLoginOrFail[F](
-      request,
-      client.run(request),
-      s"username=$username".some // don't expose password in error
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultToken] =
+    LoginApi.loginUserPass(client, vaultUri)(username, password)
 
   /** https://www.vaultproject.io/api/secret/kv/index.html#read-secret
     */
   def readSecret[F[_], A](client: Client[F], vaultUri: Uri)(
       token: String,
       secretPath: String
-  )(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] = {
-    val newSecretPath =
-      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request = Request[F](
-      method = Method.GET,
-      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+  )(implicit F: Concurrent[F], D: Decoder[A]): F[VaultSecret[A]] =
+    SecretApi.readSecret(client, vaultUri)(
+      token,
+      Uri.Path.unsafeFromString(secretPath)
     )
-
-    decodeResponseOrFail[F, VaultSecret[A]](
-      request,
-      client.run(request),
-      _.hcursor,
-      s"tokenLength=${token.length}".some,
-      df =>
-        InvalidMessageBodyFailure("Could not decode secret key value", df.some)
-    )
-  }
 
   /** https://www.vaultproject.io/api/secret/kv/kv-v1#list-secrets uses GET
     * alternative https://www.vaultproject.io/api-docs#api-operations vs LIST
@@ -190,48 +115,22 @@ object Vault {
   def listSecrets[F[_]](client: Client[F], vaultUri: Uri)(
       token: String,
       secretPath: String
-  )(implicit F: Concurrent[F]): F[VaultKeys] = {
-    val newSecretPath =
-      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request = Request[F](
-      method = Method.GET,
-      uri = vaultUri
-        .withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath"))
-        .withQueryParam("list", "true"),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+  )(implicit F: Concurrent[F]): F[VaultKeys] =
+    SecretApi.listSecrets(client, vaultUri)(
+      token,
+      Uri.Path.unsafeFromString(secretPath)
     )
-
-    decodeResponseOrFail[F, VaultKeys](
-      request,
-      client.run(request),
-      _.hcursor,
-      s"tokenLength=${token.length}".some,
-      df =>
-        InvalidMessageBodyFailure(
-          "Could not decode vault list secrets response",
-          df.some
-        )
-    )
-  }
 
   /** https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#delete-secret
     */
   def deleteSecret[F[_]](client: Client[F], vaultUri: Uri)(
       token: String,
       secretPath: String
-  )(implicit F: Concurrent[F]): F[Unit] = {
-    val newSecretPath =
-      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request = Request[F](
-      method = Method.DELETE,
-      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+  )(implicit F: Concurrent[F]): F[Unit] =
+    SecretApi.deleteSecret(client, vaultUri)(
+      token,
+      Uri.Path.unsafeFromString(secretPath)
     )
-
-    client
-      .run(request)
-      .use(expectSuccessOrFail(request, _, s"tokenLength=${token.length}".some))
-  }
 
   /** https://www.vaultproject.io/api/system/leases.html#renew-lease
     */
@@ -239,31 +138,8 @@ object Vault {
       leaseId: String,
       newLeaseDuration: FiniteDuration,
       token: String
-  )(implicit F: Concurrent[F]): F[VaultSecretRenewal] = {
-    val request = Request[F](
-      method = Method.PUT,
-      uri =
-        vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/renew")),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
-    ).withEntity(
-      Json.obj(
-        ("lease_id", Json.fromString(leaseId)),
-        ("increment", Json.fromLong(newLeaseDuration.toSeconds))
-      )
-    )
-
-    decodeResponseOrFail[F, VaultSecretRenewal](
-      request,
-      client.run(request),
-      _.hcursor,
-      s"tokenLength=${token.length}".some,
-      df =>
-        InvalidMessageBodyFailure(
-          "Could not decode vault lease renew response",
-          df.some
-        )
-    )
-  }
+  )(implicit F: Concurrent[F]): F[VaultSecretRenewal] =
+    LeaseApi.renewLease(client, vaultUri)(leaseId, newLeaseDuration, token)
 
   /** https://developer.hashicorp.com/vault/api-docs/auth/token#renew-a-token-self
     */
@@ -271,79 +147,22 @@ object Vault {
       token: VaultToken,
       newLeaseDuration: FiniteDuration
   )(implicit F: Concurrent[F]): F[VaultToken] =
-    if (!token.renewable)
-      NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
-    else {
-      val request = Request[F](
-        method = Method.POST,
-        uri = vaultUri / "v1" / "auth" / "token" / "renew-self",
-        headers =
-          Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-      ).withEntity(
-        Json.obj(
-          ("increment", Json.fromString(s"${newLeaseDuration.toSeconds}s"))
-        )
-      )
-
-      decodeResponseOrFail[F, VaultToken](
-        request,
-        client.run(request),
-        _.hcursor.downField("auth"),
-        s"tokenLength=${token.clientToken.length}".some,
-        df =>
-          InvalidMessageBodyFailure(
-            "Could not decode vault token renew response",
-            df.some
-          )
-      )
-    }
+    LeaseApi.renewSelfToken(client, vaultUri)(token, newLeaseDuration)
 
   /** https://www.vaultproject.io/api/auth/token/index.html#revoke-a-token-self-
     */
   def revokeSelfToken[F[_]](client: Client[F], vaultUri: Uri)(
       token: VaultToken
-  )(implicit F: Concurrent[F]): F[Unit] = {
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri / "v1" / "auth" / "token" / "revoke-self",
-      headers =
-        Headers(Header.Raw(CIString("X-Vault-Token"), token.clientToken))
-    )
-
-    client
-      .run(request)
-      .use(
-        expectSuccessOrFail(
-          request,
-          _,
-          s"tokenLength=${token.clientToken.length}".some
-        )
-      )
-  }
+  )(implicit F: Concurrent[F]): F[Unit] =
+    LeaseApi.revokeSelfToken(client, vaultUri)(token)
 
   /** https://www.vaultproject.io/api/system/leases.html#revoke-lease
     */
   def revokeLease[F[_]](client: Client[F], vaultUri: Uri)(
       clientToken: String,
       leaseId: String
-  )(implicit F: Concurrent[F]): F[Unit] = {
-    val request = Request[F](
-      method = Method.PUT,
-      uri =
-        vaultUri.withPath(Uri.Path.unsafeFromString("/v1/sys/leases/revoke")),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), clientToken))
-    ).withEntity(Json.obj("lease_id" -> Json.fromString(leaseId)))
-
-    client
-      .run(request)
-      .use(
-        expectSuccessOrFail(
-          request,
-          _,
-          s"tokenLength=${clientToken.length}".some
-        )
-      )
-  }
+  )(implicit F: Concurrent[F]): F[Unit] =
+    LeaseApi.revokeLease(client, vaultUri)(clientToken, leaseId)
 
   /** https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
     */
@@ -353,45 +172,23 @@ object Vault {
   )(token: String, secretPath: String, payload: CertificateRequest)(implicit
       F: Concurrent[F]
   ): F[VaultSecret[CertificateData]] =
-    generateSecret(client, vaultUri)(token, secretPath, payload)
+    SecretApi.generateSecret(client, vaultUri)(
+      token,
+      Uri.Path.unsafeFromString(secretPath),
+      payload
+    )
 
   def generateSecret[F[_], A: Encoder, B: Decoder](
       client: Client[F],
       vaultUri: Uri
   )(token: String, secretPath: String, payload: A)(implicit
       F: Concurrent[F]
-  ): F[VaultSecret[B]] = {
-    val newSecretPath =
-      if (secretPath.startsWith("/")) secretPath.substring(1) else secretPath
-    val request = Request[F](
-      method = Method.POST,
-      uri = vaultUri.withPath(Uri.Path.unsafeFromString(s"/v1/$newSecretPath")),
-      headers = Headers(Header.Raw(CIString("X-Vault-Token"), token))
+  ): F[VaultSecret[B]] =
+    SecretApi.generateSecret[F, A, B](client, vaultUri)(
+      token,
+      Uri.Path.unsafeFromString(secretPath),
+      payload
     )
-
-    decodeResponseOrFailOpt[F, VaultSecret[B]](
-      request,
-      client.run(request.withEntity(payload.asJson)),
-      _.hcursor,
-      s"tokenLength=${token.length}".some,
-      df =>
-        InvalidMessageBodyFailure("Could not decode secret key value", df.some)
-    ).flatMap {
-      case Some(vs) => vs.pure[F]
-      case None =>
-        readSecret[F, B](client, vaultUri)(token, secretPath)
-          .adaptError { case readError =>
-            readError.addSuppressed(
-              UnexpectedStatus(Status.NoContent, request.method, request.uri)
-            )
-            VaultRequestError(
-              request = request,
-              cause = readError.some,
-              extra = s"tokenLength=${token.length}".some
-            )
-          }
-    }
-  }
 
   /** <h1>WARNING: This method is deeply flawed.</h1>
     *
@@ -922,135 +719,17 @@ object Vault {
     }
   }
 
-  private[this] val decoderError: DecodingFailure => DecodeFailure =
-    failure =>
-      InvalidMessageBodyFailure(
-        s"Could not decode JSON, error: ${failure.message}, cursor: ${failure.history}"
-      )
-
-  private[this] def decodeResponseOrFailOpt[F[_]: Concurrent, A: Decoder](
-      request: Request[F],
-      responseR: Resource[F, Response[F]],
-      toCursor: Json => ACursor,
-      extra: Option[String],
-      fmtDecoderFailure: DecodingFailure => DecodeFailure
-  ): F[Option[A]] =
-    responseR.use { response =>
-      if (response.status === Status.NoContent)
-        none.pure[F]
-      else if (response.status.isSuccess)
-        response.json
-          .adaptError { case e => VaultRequestError(request, e.some, extra) }
-          .flatMap { json =>
-            toCursor(json)
-              .as[A]
-              .leftFlatMap { e =>
-                VaultApiError
-                  .decode(response.status, json)
-                  .fold(
-                    _ => fmtDecoderFailure(e).asLeft[A],
-                    vae =>
-                      Left {
-                        if (vae.errors.nonEmpty) vae
-                        else fmtDecoderFailure(e)
-                      }
-                  )
-              }
-              .bimap(
-                cause => VaultRequestError(request, cause.some, extra),
-                _.some
-              )
-              .liftTo[F]
-          }
-      else
-        response.json.flatMap { json =>
-          val cause = VaultApiError
-            .decode(response.status, json)
-            .valueOr(fmtDecoderFailure(_))
-
-          VaultRequestError(request, cause.some, extra).raiseError[F, Option[A]]
-        }
-    }
-
-  private[this] def decodeResponseOrFail[F[_]: Concurrent, A: Decoder](
-      request: Request[F],
-      responseR: Resource[F, Response[F]],
-      toCursor: Json => ACursor,
-      extra: Option[String],
-      fmtDecoderFailure: DecodingFailure => DecodeFailure
-  ): F[A] =
-    decodeResponseOrFailOpt[F, A](
-      request,
-      responseR,
-      toCursor,
-      extra,
-      fmtDecoderFailure
-    )
-      .flatMap(_.liftTo[F] {
-        VaultRequestError(
-          request,
-          UnexpectedStatus(Status.NoContent, request.method, request.uri).some,
-          extra
-        )
-      })
-
-  private[this] def decodeLoginOrFail[F[_]: Concurrent](
-      request: Request[F],
-      response: Resource[F, Response[F]],
-      extra: Option[String]
-  ): F[VaultToken] =
-    decodeResponseOrFail[F, VaultToken](
-      request,
-      response,
-      _.hcursor.downField("auth"),
-      extra,
-      decoderError
-    )
-
-  private[this] def expectSuccessOrFail[F[_]: Concurrent](
-      request: Request[F],
-      response: Response[F],
-      extra: Option[String]
-  ): F[Unit] =
-    if (response.status.isSuccess) Applicative[F].unit
-    else {
-      val unexpectedStatus =
-        UnexpectedStatus(response.status, request.method, request.uri)
-      response.json
-        .adaptError { case e =>
-          unexpectedStatus.addSuppressed(e)
-          VaultRequestError(request, unexpectedStatus.some, extra)
-        }
-        .flatMap { json =>
-          VaultApiError
-            .decode(response.status, json)
-            .fold(
-              df => {
-                unexpectedStatus.addSuppressed(df)
-                VaultRequestError(request, unexpectedStatus.some, extra)
-              },
-              vae => {
-                if (vae.errors.nonEmpty)
-                  VaultRequestError(request, vae.some, extra)
-                else
-                  VaultRequestError(request, unexpectedStatus.some, extra)
-              }
-            )
-            .raiseError[F, Unit]
-        }
-    }
-
   final case class InvalidRequirement(message: String) extends Throwable {
-    override def getMessage(): String = message
+    override def getMessage: String = message
   }
 
   final case class NonRenewableSecret(leaseId: String) extends Throwable {
-    override def getMessage(): String =
+    override def getMessage: String =
       s"Secret lease $leaseId could not be renewed any longer"
   }
 
   final case class NonRenewableToken(leaseId: String) extends Throwable {
-    override def getMessage(): String =
+    override def getMessage: String =
       s"Token lease $leaseId could not be renewed any longer"
   }
 }
