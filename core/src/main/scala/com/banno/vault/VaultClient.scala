@@ -216,7 +216,7 @@ trait VaultClient[F[_]] {
   /** Allows inspection of the client token, as well as building other algebras
     * backed by this client
     */
-  def clientToken: F[VaultToken] = applicative.pure(VaultToken("", 0L, false))
+  def vaultToken: F[VaultToken] = applicative.pure(VaultToken("", 0L, false))
 }
 
 object VaultClient {
@@ -431,7 +431,7 @@ object VaultClient {
     private def retryOnPreconditionFailed[A](fa: F[A]): F[A] =
       retryUntilConsistent(consistencyConfig, fa)
 
-    override def clientToken: F[VaultToken] = vaultTokenRef.get
+    override def vaultToken: F[VaultToken] = vaultTokenRef.get
 
     override def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]] =
       readSecret[A](Path.unsafeFromString(secretPath))
@@ -594,7 +594,7 @@ object VaultClient {
       override def mapK[H[_]: Applicative](gh: G ~> H): VaultClient[H] =
         VaultClient.mapK(this, gh)
 
-      override def clientToken: G[VaultToken] = fg(vault.clientToken)
+      override def vaultToken: G[VaultToken] = fg(vault.vaultToken)
     }
 
   final class CurrentlyInconsistent(val errors: NonEmptyChain[Throwable])
