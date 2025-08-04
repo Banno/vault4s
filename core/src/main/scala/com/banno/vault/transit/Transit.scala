@@ -18,7 +18,7 @@ package com.banno.vault.transit
 
 import cats.data.NonEmptyList
 import cats.effect.Concurrent
-import cats.implicits.*
+import cats.syntax.all.*
 import com.banno.vault.impl.TransitApi
 import com.banno.vault.models.VaultToken
 import org.http4s.*
@@ -215,7 +215,8 @@ final class TransitClient[F[_]](
     vaultUri: Uri,
     vaultTokenF: F[VaultToken],
     keyPath: Uri.Path
-)(implicit F: Concurrent[F]) {
+)(implicit F: Concurrent[F])
+    extends VaultTransitClient[F] {
   def this(client: Client[F], vaultUri: Uri, token: String, keyName: KeyName)(
       implicit F: Concurrent[F]
   ) = {
@@ -227,9 +228,7 @@ final class TransitClient[F[_]](
     )
   }
 
-  /** Function to access the details of a transit Key
-    *
-    * https://www.vaultproject.io/api/secret/transit/index.html#read-key
+  /** @inheritdoc
     */
   def keyDetails: F[KeyDetails] =
     vaultTokenF.flatMap(TransitApi.keyDetails[F](client, vaultUri, _, keyPath))

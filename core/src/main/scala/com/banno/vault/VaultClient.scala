@@ -23,8 +23,9 @@ import cats.effect.{Async, Ref, Temporal}
 import cats.syntax.all.*
 import cats.{Applicative, MonadThrow, NonEmptyParallel, ~>}
 import com.banno.vault.Vault.NonRenewableSecret
-import com.banno.vault.impl.{LeaseApi, LoginApi, SecretApi}
+import com.banno.vault.impl.{LeaseApi, LoginApi, SecretApi, TransitApi}
 import com.banno.vault.models.*
+import com.banno.vault.transit.{KeyName, TransitClient, VaultTransitClient}
 import io.circe.{Decoder, Encoder}
 import org.http4s.Uri.Path
 import org.http4s.client.{Client, UnexpectedStatus}
@@ -236,6 +237,11 @@ trait VaultClient[F[_]] {
     * backed by this client
     */
   def vaultToken: F[VaultToken] = applicative.pure(VaultToken("", 0L, false))
+
+  def transitClientFor(key: Path): VaultTransitClient[F]
+
+  def transitClientFor(key: KeyName): VaultTransitClient[F] =
+    transitClientFor(TransitApi.keyAsPath(key))
 }
 
 object VaultClient {
@@ -538,6 +544,9 @@ object VaultClient {
         )
       }
 
+    override def transitClientFor(key: Path): VaultTransitClient[F] =
+      new TransitClient[F](client, vaultUri, vaultToken, key)
+
     override def mapK[G[_]: Applicative](fg: F ~> G): VaultClient[G] =
       VaultClient.mapK(this, fg)
   }
@@ -614,6 +623,9 @@ object VaultClient {
         VaultClient.mapK(this, gh)
 
       override def vaultToken: G[VaultToken] = fg(vault.vaultToken)
+
+      override def transitClientFor(key: Path): VaultTransitClient[G] =
+        vault.transitClientFor(key).mapK(fg)
     }
 
   final class CurrentlyInconsistent(val errors: NonEmptyChain[Throwable])

@@ -6,10 +6,9 @@ val Scala213 = "2.13.16"
 val Scala3 = "3.3.6"
 ThisBuild / crossScalaVersions := Seq("2.12.20", Scala213, Scala3)
 ThisBuild / scalaVersion := crossScalaVersions.value.last
-ThisBuild / tlBaseVersion := "9.4"
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
 ThisBuild / tlJdkRelease := Some(8)
-ThisBuild / tlBaseVersion := "9.4"
+ThisBuild / tlBaseVersion := "9.5"
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
