@@ -22,7 +22,13 @@ import org.http4s.Status
 import scala.util.control.NoStackTrace
 
 final case class VaultApiError(status: Status, errors: List[String])
-    extends RuntimeException(errors.mkString("Vault API Errors:\n", "\n", ""))
+    extends RuntimeException(
+      errors.mkString(
+        s"Vault API Errors (status: ${status.renderString})\n",
+        "\n",
+        ""
+      )
+    )
     with NoStackTrace
 
 object VaultApiError {
