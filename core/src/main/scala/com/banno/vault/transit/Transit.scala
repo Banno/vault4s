@@ -16,16 +16,13 @@
 
 package com.banno.vault.transit
 
-import cats.implicits._
 import cats.data.NonEmptyList
-import org.http4s._
-import org.http4s.Method.{GET, POST}
-import org.http4s.client.Client
-import com.banno.vault.models.{VaultRequestError, VaultSecret}
-import io.circe.Encoder
-import org.http4s.circe._
 import cats.effect.Concurrent
-import org.typelevel.ci.CIString
+import cats.implicits.*
+import com.banno.vault.impl.TransitApi
+import com.banno.vault.models.VaultToken
+import org.http4s.*
+import org.http4s.client.Client
 
 object Transit {
 
@@ -40,7 +37,12 @@ object Transit {
       token: String,
       key: KeyName
   ): F[KeyDetails] =
-    new TransitClient[F](client, vaultUri, token, key).keyDetails
+    TransitApi.keyDetails(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key)
+    )
 
   /** Function to encrypt data.
     *
@@ -52,7 +54,14 @@ object Transit {
       token: String,
       key: KeyName
   )(plaintext: PlainText): F[CipherText] =
-    new TransitClient[F](client, vaultUri, token, key).encrypt(plaintext)
+    TransitApi.encrypt(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      plaintext,
+      none
+    )
 
   /** Function to encrypt data.
     *
@@ -64,8 +73,14 @@ object Transit {
       token: String,
       key: KeyName
   )(plaintext: PlainText, context: Context): F[CipherText] =
-    new TransitClient[F](client, vaultUri, token, key)
-      .encryptInContext(plaintext, context)
+    TransitApi.encrypt(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      plaintext,
+      context.some
+    )
 
   /** Function to encrypt data.
     *
@@ -79,8 +94,17 @@ object Transit {
       key: KeyName
   )(
       plaintexts: NonEmptyList[PlainText]
-  ): F[NonEmptyList[TransitError.Or[CipherText]]] =
-    new TransitClient[F](client, vaultUri, token, key).encryptBatch(plaintexts)
+  ): F[NonEmptyList[TransitError.Or[CipherText]]] = {
+    val payload = EncryptBatchRequest(plaintexts.map(EncryptRequest(_, None)))
+    TransitApi.encryptBatch(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      payload,
+      "EncryptBatch without context"
+    )
+  }
 
   /** Function to decrypt data.
     *
@@ -92,7 +116,14 @@ object Transit {
       token: String,
       key: KeyName
   )(cipherText: CipherText): F[PlainText] =
-    new TransitClient[F](client, vaultUri, token, key).decrypt(cipherText)
+    TransitApi.decrypt(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      cipherText,
+      none
+    )
 
   /** Function to decrypt data, given some context information.
     *
@@ -104,8 +135,14 @@ object Transit {
       token: String,
       key: KeyName
   )(cipherText: CipherText, context: Context): F[PlainText] =
-    new TransitClient[F](client, vaultUri, token, key)
-      .decryptInContext(cipherText, context)
+    TransitApi.decrypt(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      cipherText,
+      context.some
+    )
 
   /** Function to decrypt data, given some context information.
     *
@@ -123,8 +160,17 @@ object Transit {
       key: KeyName
   )(
       cipherTexts: NonEmptyList[CipherText]
-  ): F[NonEmptyList[TransitError.Or[PlainText]]] =
-    new TransitClient[F](client, vaultUri, token, key).decryptBatch(cipherTexts)
+  ): F[NonEmptyList[TransitError.Or[PlainText]]] = {
+    val payload = DecryptBatchRequest(cipherTexts.map(DecryptRequest(_, None)))
+    TransitApi.decryptBatch(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      payload,
+      "DecryptBatch without context"
+    )
+  }
 
   /** Function to decrypt a batch of data, where each ciphertext is accompanied
     * by its context information.
@@ -144,10 +190,19 @@ object Transit {
       key: KeyName
   )(
       inputs: NonEmptyList[(CipherText, Context)]
-  ): F[NonEmptyList[TransitError.Or[PlainText]]] =
-    new TransitClient[F](client, vaultUri, token, key)
-      .decryptInContextBatch(inputs)
-
+  ): F[NonEmptyList[TransitError.Or[PlainText]]] = {
+    val payload = DecryptBatchRequest(inputs.map { case (cipht, ctx) =>
+      DecryptRequest(cipht, Some(ctx))
+    })
+    TransitApi.decryptBatch(
+      client,
+      vaultUri,
+      VaultToken.wrap(token),
+      TransitApi.keyAsPath(key),
+      payload,
+      "DecryptBatch with context"
+    )
+  }
 }
 
 /** A TransitClient represents an authenticated connection to a vault transit
@@ -158,81 +213,35 @@ object Transit {
 final class TransitClient[F[_]](
     client: Client[F],
     vaultUri: Uri,
-    token: String,
-    key: KeyName
+    vaultTokenF: F[VaultToken],
+    keyPath: Uri.Path
 )(implicit F: Concurrent[F]) {
-
-  private implicit val encryptResponseEntityDecoder
-      : EntityDecoder[F, EncryptResponse] = jsonOf
-  private implicit val decryptResponseEntityDecoder
-      : EntityDecoder[F, DecryptResponse] = jsonOf
-  private implicit val keyEntityDecoder: EntityDecoder[F, KeyDetails] = jsonOf
-  private implicit val ebred
-      : EntityDecoder[F, VaultSecret[EncryptBatchResponse]] = jsonOf
-  private implicit val dbred: EntityDecoder[F, DecryptBatchResponse] =
-    jsonOf[F, DecryptBatchResponse]
-
-  /* The URIs we use here are those from the transit documentation.
-   * the v1 prefix is specified in https://www.vaultproject.io/api/overview
-   */
-  private val keyAsPath: String = key.name.dropWhile(_ === '/')
-
-  private val encryptUri: Uri = vaultUri.withPath(
-    Uri.Path.unsafeFromString(s"/v1/transit/encrypt/${keyAsPath}")
-  )
-  private val decryptUri: Uri = vaultUri.withPath(
-    Uri.Path.unsafeFromString(s"/v1/transit/decrypt/${keyAsPath}")
-  )
-  private val readKeyUri: Uri = vaultUri.withPath(
-    Uri.Path.unsafeFromString(s"/v1/transit/keys/${keyAsPath}")
-  )
-
-  private val tokenHeaders: Headers = Headers(
-    Header.Raw(CIString("X-Vault-Token"), token)
-  )
-
-  private def postOf[A](uri: Uri, data: A)(implicit enc: Encoder[A]) =
-    Request[F](method = POST, uri = uri, headers = tokenHeaders).withEntity(
-      enc(data)
+  def this(client: Client[F], vaultUri: Uri, token: String, keyName: KeyName)(
+      implicit F: Concurrent[F]
+  ) = {
+    this(
+      client,
+      vaultUri,
+      VaultToken.wrap(token).pure[F],
+      TransitApi.keyAsPath(keyName)
     )
+  }
 
   /** Function to access the details of a transit Key
     *
     * https://www.vaultproject.io/api/secret/transit/index.html#read-key
     */
-  val keyDetails: F[KeyDetails] = {
-    val request =
-      Request[F](method = GET, uri = readKeyUri, headers = tokenHeaders)
-    F.handleErrorWith(client.expect[KeyDetails](request)) { e =>
-      F.raiseError(
-        VaultRequestError(
-          request,
-          e.some,
-          s"keyName=${key.name}, operation=GetKey".some
-        )
-      )
-    }
-  }
+  def keyDetails: F[KeyDetails] =
+    vaultTokenF.flatMap(TransitApi.keyDetails[F](client, vaultUri, _, keyPath))
 
   /** Function to encrypt data, given the name of the secret
     *
     * https://www.vaultproject.io/api/secret/transit/index.html#encrypt-data
     */
-  def encrypt(plaintext: PlainText): F[CipherText] = {
-    val request = postOf(encryptUri, EncryptRequest(plaintext, None))
-    for {
-      response <- F.handleErrorWith(client.expect[EncryptResponse](request)) {
-        e =>
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"keyName=${key.name}, operation=EncryptOne, no context".some
-            )
-          )
-      }
-    } yield response.data.ciphertext
-  }
+  def encrypt(plaintext: PlainText): F[CipherText] =
+    vaultTokenF.flatMap(
+      TransitApi.encrypt[F](client, vaultUri, _, keyPath, plaintext, none)
+    )
 
   /** Function to encrypt data, adding a context for key derivation.
     *
@@ -241,21 +250,17 @@ final class TransitClient[F[_]](
   def encryptInContext(
       plaintext: PlainText,
       context: Context
-  ): F[CipherText] = {
-    val request = postOf(encryptUri, EncryptRequest(plaintext, Some(context)))
-    for {
-      response <- F.handleErrorWith(client.expect[EncryptResponse](request)) {
-        e =>
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"keyName=${key.name}, operation=EncryptOne, context = ${context.context.value}".some
-            )
-          )
-      }
-    } yield response.data.ciphertext
-  }
+  ): F[CipherText] =
+    vaultTokenF.flatMap(
+      TransitApi.encrypt(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        plaintext,
+        context.some
+      )
+    )
 
   /** Function to encrypt a batch of data, without any context.
     *
@@ -269,7 +274,16 @@ final class TransitClient[F[_]](
       plaintexts: NonEmptyList[PlainText]
   ): F[NonEmptyList[TransitError.Or[CipherText]]] = {
     val payload = EncryptBatchRequest(plaintexts.map(EncryptRequest(_, None)))
-    encryptBatchAux(payload, "EncryptBatch without context")
+    vaultTokenF.flatMap(
+      TransitApi.encryptBatch(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        payload,
+        "EncryptBatch without context"
+      )
+    )
   }
 
   /** Function to encrypt a batch of context-plaintext pairs in a single trip.
@@ -282,81 +296,41 @@ final class TransitClient[F[_]](
     val payload = EncryptBatchRequest(inputs.map { case (pt, ctx) =>
       EncryptRequest(pt, Some(ctx))
     })
-    encryptBatchAux(payload, "EncryptBatch with context")
-  }
-
-  private def encryptBatchAux(
-      payload: EncryptBatchRequest,
-      op: String
-  ): F[NonEmptyList[TransitError.Or[CipherText]]] = {
-    val request = postOf(encryptUri, payload)
-    for {
-      results <- F.handleErrorWith(
-        client
-          .expect[VaultSecret[EncryptBatchResponse]](request)
-          .map(_.data.batchResults)
-      ) { case e =>
-        F.raiseError(
-          VaultRequestError(
-            request,
-            e.some,
-            s"keyName=${key.name}, operation=$op".some
-          )
-        )
-      }
-      _ <-
-        if (results.exists(_.isRight)) F.unit
-        else
-          F.raiseError {
-            VaultRequestError(
-              request,
-              None,
-              s"keyName=${key.name}, operation=$op, all requests failed".some
-            )
-          }
-    } yield results.map(_.map(_.ciphertext))
+    vaultTokenF.flatMap(
+      TransitApi.encryptBatch(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        payload,
+        "EncryptBatch with context"
+      )
+    )
   }
 
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
     */
-  def decrypt(cipherText: CipherText): F[PlainText] = {
-    val request = postOf(decryptUri, DecryptRequest(cipherText, None))
-    for {
-      response <- F.handleErrorWith(client.expect[DecryptResponse](request)) {
-        e =>
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"keyName=${key.name}, operation=DecryptOne, no context".some
-            )
-          )
-      }
-    } yield response.data.plaintext
-  }
+  def decrypt(cipherText: CipherText): F[PlainText] =
+    vaultTokenF.flatMap(
+      TransitApi.decrypt(client, vaultUri, _, keyPath, cipherText, none)
+    )
 
   /** https://www.vaultproject.io/api/secret/transit/index.html#decrypt-data
     */
   def decryptInContext(
       cipherText: CipherText,
       context: Context
-  ): F[PlainText] = {
-    val decryptReq = DecryptRequest(cipherText, Some(context))
-    val request = postOf(decryptUri, decryptReq)
-    for {
-      response <- F.handleErrorWith(client.expect[DecryptResponse](request)) {
-        e =>
-          val showCtx = context.context.value
-          F.raiseError(
-            VaultRequestError(
-              request,
-              e.some,
-              s"keyName=${key.name}, operation=DecryptOne, context = $showCtx".some
-            )
-          )
-      }
-    } yield response.data.plaintext
-  }
+  ): F[PlainText] =
+    vaultTokenF.flatMap(
+      TransitApi.decrypt(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        cipherText,
+        context.some
+      )
+    )
 
   /** Decrypts a batch of input ciphertexts using a single round-trip to the
     * Vault server. Returns a list where each entry is the attempted result of
@@ -369,10 +343,17 @@ final class TransitClient[F[_]](
   def decryptBatch(
       inputs: NonEmptyList[CipherText]
   ): F[NonEmptyList[TransitError.Or[PlainText]]] = {
-    val payload = DecryptBatchRequest(
-      inputs.map((cipht: CipherText) => DecryptRequest(cipht, None))
+    val payload = DecryptBatchRequest(inputs.map(DecryptRequest(_, None)))
+    vaultTokenF.flatMap(
+      TransitApi.decryptBatch(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        payload,
+        "DecryptBatch without context"
+      )
     )
-    decryptBatchAux(payload, "DecryptBatch without context")
   }
 
   /** Decrypts a batch of input pairs (ciphertexts and contexts) using a single
@@ -388,37 +369,15 @@ final class TransitClient[F[_]](
     val payload = DecryptBatchRequest(inputs.map { case (cipht, ctx) =>
       DecryptRequest(cipht, Some(ctx))
     })
-    decryptBatchAux(payload, "DecryptBatch with context")
+    vaultTokenF.flatMap(
+      TransitApi.decryptBatch(
+        client,
+        vaultUri,
+        _,
+        keyPath,
+        payload,
+        "DecryptBatch with context"
+      )
+    )
   }
-
-  private def decryptBatchAux(
-      payload: DecryptBatchRequest,
-      op: String
-  ): F[NonEmptyList[TransitError.Or[PlainText]]] = {
-    val request = postOf(decryptUri, payload)
-    for {
-      results <- F.handleErrorWith(
-        client.expect[DecryptBatchResponse](request).map(_.data.batchResults)
-      ) { case e =>
-        F.raiseError(
-          VaultRequestError(
-            request,
-            e.some,
-            s"keyName=${key.name}, operation=$op".some
-          )
-        )
-      }
-      _ <-
-        if (results.exists(_.isRight)) F.unit
-        else
-          F.raiseError {
-            VaultRequestError(
-              request,
-              None,
-              s"keyName=${key.name}, operation=$op, all requests failed".some
-            )
-          }
-    } yield results.map(_.map(_.plaintext))
-  }
-
 }
