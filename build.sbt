@@ -14,6 +14,7 @@ ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
 val http4sV = "0.23.30"
+val fs2V = "3.12.2"
 val munitCatsEffectV = "2.1.0"
 val munitScalaCheckV = "1.2.0"
 val scalacheckEffectV = "2.0.0-M2"
@@ -64,6 +65,7 @@ lazy val docs = project
 lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework"),
   libraryDependencies ++= Seq(
+    "co.fs2" %% "fs2-io" % fs2V,
     "org.http4s" %% "http4s-client" % http4sV,
     "org.http4s" %% "http4s-circe" % http4sV,
     "org.http4s" %% "http4s-dsl" % http4sV % Test,
