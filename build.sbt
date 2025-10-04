@@ -19,7 +19,7 @@ val munitCatsEffectV = "2.1.0"
 val munitScalaCheckV = "1.2.0"
 val scalacheckEffectV = "2.0.0-M2"
 
-val kindProjectorV = "0.13.3"
+val kindProjectorV = "0.13.4"
 val betterMonadicForV = "0.3.1"
 
 lazy val `vault4s` = project
