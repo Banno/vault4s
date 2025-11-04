@@ -23,8 +23,10 @@ import cats.effect.{Async, Ref, Temporal}
 import cats.syntax.all.*
 import cats.{Applicative, MonadThrow, NonEmptyParallel, ~>}
 import com.banno.vault.Vault.NonRenewableSecret
+import com.banno.vault.impl.{LeaseApi, LoginApi, SecretApi}
 import com.banno.vault.models.*
 import io.circe.{Decoder, Encoder}
+import org.http4s.Uri.Path
 import org.http4s.client.{Client, UnexpectedStatus}
 import org.http4s.{Status, Uri}
 
@@ -61,9 +63,8 @@ trait VaultClient[F[_]] {
     * <h3>CAUTION: non-KV2 secrets <i>may</i> expire</h3>
     *
     * Dynamic secrets (like database credentials) are a common example, so if a
-    * secret becomes invalid after a set period of time,
-    * [[VaultClient.VaultClientExtensions.readSecretAndKeep]] may be what is
-    * needed.
+    * secret becomes invalid after a set period of time, `readSecretAndKeep` may
+    * be what is needed.
     *
     * @note
     *   Despite being a prefix common to all secrets, `secret/` does need to
@@ -79,13 +80,39 @@ trait VaultClient[F[_]] {
     *
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+    * @see
+    *   [[VaultClient.VaultClientExtensions.readSecretPathAndKeep]]
+    */
+  def readSecret[A: Decoder](secretPath: Path): F[VaultSecret[A]] =
+    readSecret[A](secretPath.renderString)
+
+  /** A backwards-compatible version of `readSecret` that accepts the path as a
+    * string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[readSecret[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]]
 
   /** Convenience wrapper for `readSecret`, when the renewal information is not
     * needed.
     * @see
-    *   [[readSecret]]
+    *   [[readSecret[A](secretPath:org\.http4s\.Uri\.Path*]]
+    */
+  def readSecretData[A: Decoder](secretPath: Path): F[A] =
+    readSecretData[A](secretPath.renderString)
+
+  /** A backwards-compatible version of `readSecretData` that accepts the path
+    * as a string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[readSecretData[A](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def readSecretData[A: Decoder](secretPath: String): F[A]
 
@@ -100,6 +127,18 @@ trait VaultClient[F[_]] {
     * @see
     *   https://www.vaultproject.io/api-docs#api-operations to use LIST
     */
+  def listSecrets(secretPath: Path): F[VaultKeys] =
+    listSecrets(secretPath.renderString)
+
+  /** A backwards-compatible version of `listSecrets` that accepts the path as a
+    * string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[listSecrets(secretPath:org\.http4s\.Uri\.Path*]]
+    */
   def listSecrets(secretPath: String): F[VaultKeys]
 
   /** @note
@@ -110,6 +149,21 @@ trait VaultClient[F[_]] {
     * be `secret/foo/bar/baz`
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#create-update-secret
+    */
+  def createSecret[A: Encoder, B: Decoder](
+      secretPath: Path,
+      payload: A
+  ): F[VaultSecret[B]] =
+    createSecret[A, B](secretPath.renderString, payload)
+
+  /** A backwards-compatible version of `createSecret` that accepts the path as
+    * a string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[createSecret[A,B](secretPath:org\.http4s\.Uri\.Path*]]
     */
   def createSecret[A: Encoder, B: Decoder](
       secretPath: String,
@@ -124,6 +178,18 @@ trait VaultClient[F[_]] {
     * be `secret/foo/bar/baz`
     * @see
     *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#delete-secret
+    */
+  def deleteSecret(secretPath: Path): F[Unit] =
+    deleteSecret(secretPath.renderString)
+
+  /** A backwards-compatible version of `deleteSecret` that accepts the path as
+    * a string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[deleteSecret(secretPath:org\.http4s\.Uri\.Path*]]
     */
   def deleteSecret(secretPath: String): F[Unit]
 
@@ -141,6 +207,21 @@ trait VaultClient[F[_]] {
   /** https://www.vaultproject.io/api/secret/pki/index.html#generate-certificate
     */
   def generateCertificate(
+      secretPath: Path,
+      payload: CertificateRequest
+  ): F[VaultSecret[CertificateData]] =
+    generateCertificate(secretPath.renderString, payload)
+
+  /** A backwards-compatible version of `generateCertificate` that accepts the
+    * path as a string
+    *
+    * As long as the path doesn't contain `/` that should be escaped, this
+    * should be fine to continue using.
+    *
+    * @see
+    *   [[generateCertificate(secretPath:org\.http4s\.Uri\.Path*]]
+    */
+  def generateCertificate(
       secretPath: String,
       payload: CertificateRequest
   ): F[VaultSecret[CertificateData]]
@@ -150,6 +231,11 @@ trait VaultClient[F[_]] {
   /** Change the effect type
     */
   def mapK[G[_]: Applicative](fg: F ~> G): VaultClient[G]
+
+  /** Allows inspection of the client token, as well as building other algebras
+    * backed by this client
+    */
+  def vaultToken: F[VaultToken] = applicative.pure(VaultToken("", 0L, false))
 }
 
 object VaultClient {
@@ -176,7 +262,6 @@ object VaultClient {
       .make(loginWithRetry(client, vaultConfig, consistencyConfig))(
         revokeWithRetry(_, client, vaultConfig, consistencyConfig)
       )
-      .map(_.clientToken)
       .evalMap(Ref[F].of(_))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
 
@@ -225,7 +310,6 @@ object VaultClient {
           .foreverM
           .background
       }
-      .map(ref => (ref: RefSource[F, VaultToken]).map(_.clientToken))
       .map(new Default[F](client, vaultConfig.vaultUri, _, consistencyConfig))
   }
 
@@ -263,23 +347,32 @@ object VaultClient {
       vaultConfig match {
         case role: VaultConfig.AppRole =>
           role.secretId match {
-            case None => Vault.login(client, role.vaultUri)(role.roleId)
+            case None => LoginApi.login(client, role.vaultUri, role.roleId)
             case Some(secretId) =>
-              Vault.loginAppRoleAndSecretId(client, role.vaultUri)(
+              LoginApi.loginAppRoleAndSecretId(
+                client,
+                role.vaultUri,
                 role.roleId,
                 secretId
               )
           }
         case k8s: VaultConfig.K8s =>
-          Vault.loginKubernetes(client, k8s.vaultUri)(
+          LoginApi.loginKubernetes(
+            client,
+            k8s.vaultUri,
             k8s.roleId,
             k8s.jwt,
             k8s.mountPoint
           )
         case gitHub: VaultConfig.GitHub =>
-          Vault.loginGitHub(client, gitHub.vaultUri)(gitHub.gitHubToken)
+          LoginApi.loginGitHub(client, gitHub.vaultUri, gitHub.gitHubToken)
         case uap: VaultConfig.UsernameAndPassword =>
-          Vault.loginUserPass(client, uap.vaultUri)(uap.username, uap.username)
+          LoginApi.loginUserPass(
+            client,
+            uap.vaultUri,
+            uap.username,
+            uap.username
+          )
       }
     )
 
@@ -291,7 +384,9 @@ object VaultClient {
   ): F[VaultToken] =
     retryUntilConsistent(
       leaseConfig,
-      Vault.renewSelfToken(client, vaultConfig.vaultUri)(
+      LeaseApi.renewSelfToken(
+        client,
+        vaultConfig.vaultUri,
         vaultToken,
         vaultConfig.tokenLeaseExtension
       )
@@ -305,7 +400,7 @@ object VaultClient {
   ): F[Unit] =
     retryUntilConsistent(
       leaseConfig,
-      Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
+      LeaseApi.revokeSelfToken(client, vaultConfig.vaultUri, vaultToken)
     ).recoverWith {
       case VaultRequestError(
             _,
@@ -347,7 +442,7 @@ object VaultClient {
   private class Default[F[_]: Async](
       client: Client[F],
       vaultUri: Uri,
-      tokenRef: RefSource[F, String],
+      vaultTokenRef: RefSource[F, VaultToken],
       consistencyConfig: ConsistencyConfig
   ) extends VaultClient[F] {
     override protected def applicative: Applicative[F] = Async[F]
@@ -355,20 +450,31 @@ object VaultClient {
     private def retryOnPreconditionFailed[A](fa: F[A]): F[A] =
       retryUntilConsistent(consistencyConfig, fa)
 
+    override def vaultToken: F[VaultToken] = vaultTokenRef.get
+
     override def readSecret[A: Decoder](secretPath: String): F[VaultSecret[A]] =
+      readSecret[A](Path.unsafeFromString(secretPath))
+
+    override def readSecret[A: Decoder](secretPath: Path): F[VaultSecret[A]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault.readSecret[F, A](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.readSecret[F, A](client, vaultUri, _, secretPath)
         )
       }
 
     override def readSecretData[A: Decoder](secretPath: String): F[A] =
+      readSecretData[A](Path.unsafeFromString(secretPath))
+
+    override def readSecretData[A: Decoder](secretPath: Path): F[A] =
       readSecret[A](secretPath).map(_.data)
 
     override def listSecrets(secretPath: String): F[VaultKeys] =
+      listSecrets(Path.unsafeFromString(secretPath))
+
+    override def listSecrets(secretPath: Path): F[VaultKeys] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault.listSecrets[F](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.listSecrets[F](client, vaultUri, _, secretPath)
         )
       }
 
@@ -376,17 +482,26 @@ object VaultClient {
         secretPath: String,
         payload: A
     ): F[VaultSecret[B]] =
+      createSecret[A, B](Path.unsafeFromString(secretPath), payload)
+
+    override def createSecret[A: Encoder, B: Decoder](
+        secretPath: Path,
+        payload: A
+    ): F[VaultSecret[B]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault
-            .generateSecret[F, A, B](client, vaultUri)(_, secretPath, payload)
+        vaultTokenRef.get.flatMap(
+          SecretApi
+            .generateSecret[F, A, B](client, vaultUri, _, secretPath, payload)
         )
       }
 
     override def deleteSecret(secretPath: String): F[Unit] =
+      deleteSecret(Path.unsafeFromString(secretPath))
+
+    override def deleteSecret(secretPath: Path): F[Unit] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault.deleteSecret[F](client, vaultUri)(_, secretPath)
+        vaultTokenRef.get.flatMap(
+          SecretApi.deleteSecret[F](client, vaultUri, _, secretPath)
         )
       }
 
@@ -395,23 +510,31 @@ object VaultClient {
         newLeaseDuration: FiniteDuration
     ): F[VaultSecretRenewal] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault.renewLease[F](client, vaultUri)(leaseId, newLeaseDuration, _)
+        vaultTokenRef.get.flatMap(
+          LeaseApi.renewLease[F](client, vaultUri, leaseId, newLeaseDuration, _)
         )
       }
 
     override def revokeLease(leaseId: String): F[Unit] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(Vault.revokeLease[F](client, vaultUri)(_, leaseId))
+        vaultTokenRef.get.flatMap(
+          LeaseApi.revokeLease[F](client, vaultUri, _, leaseId)
+        )
       }
 
     override def generateCertificate(
         secretPath: String,
         payload: CertificateRequest
     ): F[VaultSecret[CertificateData]] =
+      generateCertificate(Path.unsafeFromString(secretPath), payload)
+
+    override def generateCertificate(
+        secretPath: Path,
+        payload: CertificateRequest
+    ): F[VaultSecret[CertificateData]] =
       retryOnPreconditionFailed {
-        tokenRef.get.flatMap(
-          Vault.generateCertificate[F](client, vaultUri)(_, secretPath, payload)
+        vaultTokenRef.get.flatMap(
+          SecretApi.generateSecret(client, vaultUri, _, secretPath, payload)
         )
       }
 
@@ -429,10 +552,21 @@ object VaultClient {
       ): G[VaultSecret[A]] =
         fg(vault.readSecret[A](secretPath))
 
+      override def readSecret[A: Decoder](
+          secretPath: Path
+      ): G[VaultSecret[A]] =
+        fg(vault.readSecret[A](secretPath))
+
       override def readSecretData[A: Decoder](secretPath: String): G[A] =
         fg(vault.readSecretData[A](secretPath))
 
+      override def readSecretData[A: Decoder](secretPath: Path): G[A] =
+        fg(vault.readSecretData[A](secretPath))
+
       override def listSecrets(secretPath: String): G[VaultKeys] =
+        fg(vault.listSecrets(secretPath))
+
+      override def listSecrets(secretPath: Path): G[VaultKeys] =
         fg(vault.listSecrets(secretPath))
 
       override def createSecret[A: Encoder, B: Decoder](
@@ -441,7 +575,16 @@ object VaultClient {
       ): G[VaultSecret[B]] =
         fg(vault.createSecret[A, B](secretPath, payload: A))
 
+      override def createSecret[A: Encoder, B: Decoder](
+          secretPath: Path,
+          payload: A
+      ): G[VaultSecret[B]] =
+        fg(vault.createSecret[A, B](secretPath, payload: A))
+
       override def deleteSecret(secretPath: String): G[Unit] =
+        fg(vault.deleteSecret(secretPath))
+
+      override def deleteSecret(secretPath: Path): G[Unit] =
         fg(vault.deleteSecret(secretPath))
 
       override def renewLease(
@@ -459,10 +602,18 @@ object VaultClient {
       ): G[VaultSecret[CertificateData]] =
         fg(vault.generateCertificate(secretPath, payload))
 
+      override def generateCertificate(
+          secretPath: Path,
+          payload: CertificateRequest
+      ): G[VaultSecret[CertificateData]] =
+        fg(vault.generateCertificate(secretPath, payload))
+
       override protected def applicative: Applicative[G] = Applicative[G]
 
       override def mapK[H[_]: Applicative](gh: G ~> H): VaultClient[H] =
         VaultClient.mapK(this, gh)
+
+      override def vaultToken: G[VaultToken] = fg(vault.vaultToken)
     }
 
   final class CurrentlyInconsistent(val errors: NonEmptyChain[Throwable])
@@ -499,7 +650,7 @@ object VaultClient {
   implicit class VaultClientExtensions[F[_]](private val vc: VaultClient[F])
       extends AnyVal {
 
-    /** Similar to [[VaultClient.readSecretData]] but calls
+    /** Similar to `VaultClient.readSecretData` but calls
       * [[VaultClient.renewLease]] on a schedule to keep the secret renewed
       * until the resource is closed IF the secret is renewable.
       *
@@ -507,7 +658,7 @@ object VaultClient {
       * happens, a single attempt will be made to re-request the secret.
       *
       * If the secret is not renewable, no attempts to renew will be made, and
-      * the behavior will be the same as if [[VaultClient.readSecret]] were
+      * the behavior will be the same as if `VaultClient.readSecretData` were
       * called and the result wrapped in a static
       * [[cats.effect.kernel.RefSource]].
       *
@@ -529,7 +680,7 @@ object VaultClient {
       *
       * @note
       *   Unless `secretPath` is pointing to a dynamic secret, this provides no
-      *   benefit over [[VaultClient.readSecretData]], so it's worth checking to
+      *   benefit over `VaultClient.readSecretData`, so it's worth checking to
       *   see if this is actually needed.
       * @note
       *   The `/v1` prefix indicates the API version, not the secret engine
@@ -537,12 +688,14 @@ object VaultClient {
       *   use case.
       * @see
       *   https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v1#read-secret
+      * @see
+      *   [[VaultClient.readSecretData[A](secretPath:org\.http4s\.Uri\.Path*]]
       * @param secretLeaseExtension
       *   If provided, determines the maximum delay between token lease
       *   refreshes. If omitted, the TTL provided by the secret will be used.
       */
-    def readSecretAndKeep[A: Decoder](
-        secretPath: String,
+    def readSecretPathAndKeep[A: Decoder](
+        secretPath: Path,
         secretLeaseExtension: Option[FiniteDuration]
     )(implicit
         F: Async[F],
@@ -642,5 +795,25 @@ object VaultClient {
           }
         }
     }
+
+    /** A backwards-compatible version of `readSecretAndKeep` that accepts the
+      * path as a string
+      *
+      * As long as the path doesn't contain `/` that should be escaped, this
+      * should be fine to continue using.
+      *
+      * @see
+      *   [[readSecretPathAndKeep]]
+      */
+    def readSecretAndKeep[A: Decoder](
+        secretPath: String,
+        secretLeaseExtension: Option[FiniteDuration]
+    )(implicit
+        F: Async[F],
+        NEP: NonEmptyParallel[F]
+    ): Resource[F, RefSource[F, A]] = readSecretPathAndKeep[A](
+      Path.unsafeFromString(secretPath),
+      secretLeaseExtension
+    )
   }
 }
