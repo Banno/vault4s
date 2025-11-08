@@ -378,7 +378,7 @@ object Vault {
         InvalidMessageBodyFailure("Could not decode secret key value", df.some)
     ).flatMap {
       case Some(vs) => vs.pure[F]
-      case None =>
+      case None     =>
         readSecret[F, B](client, vaultUri)(token, secretPath)
           .adaptError { case readError =>
             readError.addSuppressed(

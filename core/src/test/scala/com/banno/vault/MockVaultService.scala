@@ -250,7 +250,7 @@ class MockVaultService[F[_]: Async](
             validTokens
               .get(clientToken) match {
               case Some(activeToken) => resp(activeToken)
-              case None =>
+              case None              =>
                 appendToLog(
                   InternalLog.TokenNotFound(now, path, clientToken)
                 ) *>
@@ -778,12 +778,12 @@ object MockVaultService {
     def external: Log = this match {
       case PresentlyInconsistent(_, path, level) =>
         Log.PresentlyInconsistent(path, level)
-      case Success(_, path, status, _) => Log.Success(path, status)
-      case Failure(_, path, status, _) => Log.Failure(path, status)
+      case Success(_, path, status, _)         => Log.Success(path, status)
+      case Failure(_, path, status, _)         => Log.Failure(path, status)
       case ThrownException(_, path, throwable) =>
         Log.ThrownException(path, throwable)
       case TokenNotFound(_, path, token) => Log.TokenNotFound(path, token)
-      case TokenExpired(_, path, token) =>
+      case TokenExpired(_, path, token)  =>
         Log.TokenExpired(path, token.token.clientToken)
       case TokenRenewed(_, path, token) =>
         Log.TokenRenewed(path, token.token.clientToken)

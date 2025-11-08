@@ -199,8 +199,8 @@ class VaultSpec
         missingToken: String,
         missingLease: String
     ): F[Response[F]] = identifier match {
-      case valid._1      => Ok(Json.obj("auth" := valid._2).noSpaces)
-      case `invalidJson` => Ok(s""" NOT A JSON """)
+      case valid._1       => Ok(Json.obj("auth" := valid._2).noSpaces)
+      case `invalidJson`  => Ok(s""" NOT A JSON """)
       case `missingToken` =>
         Ok(s"""
               |{
