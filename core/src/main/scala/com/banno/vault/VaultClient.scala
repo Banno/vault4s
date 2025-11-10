@@ -327,7 +327,7 @@ object VaultClient {
   ): F[A] =
     initial.recoverWith { case vre: VaultRequestError =>
       (revoke.attempt, retry.attempt).parFlatMapN {
-        case (_, Right(a)) => a.pure[F]
+        case (_, Right(a))                => a.pure[F]
         case (Right(_), Left(retryError)) =>
           if (!(vre eq retryError)) {
             vre.addSuppressed(retryError)
