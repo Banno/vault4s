@@ -145,6 +145,8 @@ trait VaultClient[F[_]] {
       payload: CertificateRequest
   ): F[VaultSecret[CertificateData]]
 
+  def transitFor(keyName: transit.KeyName): F[transit.VaultTransitClient[F]]
+
   protected def applicative: Applicative[F]
 
   /** Change the effect type
@@ -415,6 +417,13 @@ object VaultClient {
         )
       }
 
+    override def transitFor(
+        keyName: transit.KeyName
+    ): F[transit.VaultTransitClient[F]] =
+      tokenRef.get.map(
+        new transit.TransitClient[F](client, vaultUri, _, keyName)
+      )
+
     override def mapK[G[_]: Applicative](fg: F ~> G): VaultClient[G] =
       VaultClient.mapK(this, fg)
   }
@@ -458,6 +467,11 @@ object VaultClient {
           payload: CertificateRequest
       ): G[VaultSecret[CertificateData]] =
         fg(vault.generateCertificate(secretPath, payload))
+
+      override def transitFor(
+          keyName: transit.KeyName
+      ): G[transit.VaultTransitClient[G]] =
+        fg(vault.transitFor(keyName)).map(_.mapK(fg))
 
       override protected def applicative: Applicative[G] = Applicative[G]
 
