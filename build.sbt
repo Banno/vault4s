@@ -17,7 +17,7 @@ val http4sV = "0.23.33"
 val fs2V = "3.13.0"
 val munitCatsEffectV = "2.1.0"
 val munitScalaCheckV = "1.2.0"
-val scalacheckEffectV = "2.0.0-M2"
+val scalacheckEffectV = "2.1.0"
 
 val kindProjectorV = "0.13.4"
 val betterMonadicForV = "0.3.1"
