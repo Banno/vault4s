@@ -14,7 +14,7 @@ ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
 val http4sV = "0.23.33"
-val fs2V = "3.12.2"
+val fs2V = "3.13.0"
 val munitCatsEffectV = "2.1.0"
 val munitScalaCheckV = "1.2.0"
 val scalacheckEffectV = "2.0.0-M2"
