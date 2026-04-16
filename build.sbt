@@ -9,7 +9,7 @@ ThisBuild / scalaVersion := crossScalaVersions.value.last
 ThisBuild / tlBaseVersion := "9.4"
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
 ThisBuild / tlJdkRelease := Some(8)
-ThisBuild / tlBaseVersion := "9.4"
+ThisBuild / tlBaseVersion := "9.5"
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
