@@ -13,7 +13,7 @@ ThisBuild / tlBaseVersion := "9.4"
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
 
-val http4sV = "0.23.33"
+val http4sV = "0.23.34"
 val fs2V = "3.13.0"
 val munitCatsEffectV = "2.2.0"
 val munitScalaCheckV = "1.2.0"
