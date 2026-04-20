@@ -18,6 +18,7 @@ package com.banno.vault.models
 
 import org.http4s.Uri
 import org.http4s.syntax.literals.*
+
 import scala.concurrent.duration.FiniteDuration
 
 sealed trait VaultConfig {
@@ -28,6 +29,10 @@ sealed trait VaultConfig {
   def withTokenLeaseExtension(extension: FiniteDuration): VaultConfig
 }
 object VaultConfig {
+
+  /** @see
+    *   https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+    */
   def appRole(
       vaultUri: Uri,
       roleId: String,
@@ -35,6 +40,9 @@ object VaultConfig {
   ): VaultConfig.AppRole =
     new AppRoleImpl(vaultUri, roleId, None, tokenLeaseExtension)
 
+  /** @see
+    *   https://www.vaultproject.io/api/auth/approle/index.html#login-with-approle
+    */
   def appRole(
       vaultUri: Uri,
       roleId: String,
@@ -43,6 +51,9 @@ object VaultConfig {
   ): VaultConfig.AppRole =
     new AppRoleImpl(vaultUri, roleId, Some(secretId), tokenLeaseExtension)
 
+  /** @see
+    *   https://www.vaultproject.io/api/auth/kubernetes/index.html#login
+    */
   def k8s(
       vaultUri: Uri,
       roleId: String,
@@ -60,6 +71,8 @@ object VaultConfig {
   /** @param mountPoint
     *   The mount point of the Kubernetes auth method. Should start with a
     *   slash.
+    * @see
+    *   https://www.vaultproject.io/api/auth/kubernetes/index.html#login
     */
   def k8s(
       vaultUri: Uri,
@@ -70,6 +83,9 @@ object VaultConfig {
   ): VaultConfig.K8s =
     new K8sImpl(vaultUri, roleId, jwt, tokenLeaseExtension, mountPoint)
 
+  /** @see
+    *   https://developer.hashicorp.com/vault/docs/auth/github
+    */
   def gitHub(
       vaultUri: Uri,
       gitHubToken: String,
@@ -77,6 +93,9 @@ object VaultConfig {
   ): VaultConfig.GitHub =
     new GitHubImpl(vaultUri, gitHubToken, tokenLeaseExtension)
 
+  /** @see
+    *   https://developer.hashicorp.com/vault/api-docs/auth/userpass
+    */
   def usernameAndPassword(
       vaultUri: Uri,
       username: String,
@@ -89,6 +108,15 @@ object VaultConfig {
       password,
       tokenLeaseExtension
     )
+
+  /** Useful for auth methods like OIDC or quick local runs
+    */
+  def providedVaultToken(
+      vaultUri: Uri,
+      vaultToken: VaultToken,
+      tokenLeaseExtension: FiniteDuration
+  ): VaultConfig.ProvidedVaultToken =
+    new ProvidedVaultTokenImpl(vaultUri, vaultToken, tokenLeaseExtension)
 
   sealed trait AppRole extends VaultConfig {
     override def roleId: String
@@ -112,6 +140,13 @@ object VaultConfig {
     override def withTokenLeaseExtension(
         extension: FiniteDuration
     ): UsernameAndPassword
+  }
+  sealed trait ProvidedVaultToken extends VaultConfig {
+    def vaultToken: VaultToken
+
+    override def withTokenLeaseExtension(
+        extension: FiniteDuration
+    ): ProvidedVaultToken
   }
 
   private final class AppRoleImpl(
@@ -171,5 +206,18 @@ object VaultConfig {
       new UsernameAndPasswordImpl(vaultUri, username, password, extension)
 
     override protected def roleId: String = username
+  }
+
+  private final class ProvidedVaultTokenImpl(
+      override val vaultUri: Uri,
+      override val vaultToken: VaultToken,
+      override val tokenLeaseExtension: FiniteDuration
+  ) extends ProvidedVaultToken {
+    override def withTokenLeaseExtension(
+        extension: FiniteDuration
+    ): ProvidedVaultToken =
+      new ProvidedVaultTokenImpl(vaultUri, vaultToken, extension)
+
+    override protected def roleId: String = vaultToken.clientToken
   }
 }

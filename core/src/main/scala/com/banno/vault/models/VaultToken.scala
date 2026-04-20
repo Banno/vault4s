@@ -54,4 +54,14 @@ object VaultToken {
         (vt1.renewable === vt2.renewable)
     )
 
+  /** The Vault CLI tool uses a different serialization format than the API
+    */
+  val vaultTokenCLIDecoder: Decoder[VaultToken] =
+    Decoder.instance[VaultToken] { c =>
+      Decoder.resultInstance.map3(
+        c.downField("id").as[String],
+        c.downField("ttl").as[Long],
+        c.downField("renewable").as[Boolean]
+      )(VaultToken.apply)
+    }
 }
