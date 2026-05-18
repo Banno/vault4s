@@ -305,19 +305,26 @@ object VaultClient {
       vaultConfig: VaultConfig,
       leaseConfig: ConsistencyConfig
   ): F[Unit] =
-    retryUntilConsistent(
-      leaseConfig,
-      Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
-    ).recoverWith {
-      case VaultRequestError(
-            _,
-            Some(
-              UnexpectedStatus(Status.Forbidden, _, _) |
-              VaultApiError(Status.Forbidden, _)
-            )
-          ) =>
-        // This means the token has already expired or been revoked, so we can ignore this
-        Async[F].unit
+    vaultConfig match {
+      case _: VaultConfig.ProvidedVaultToken =>
+        // If a token was provided, rather than something the client got by logging in,
+        // we don't want to revoke it.
+        Applicative[F].unit
+      case _ =>
+        retryUntilConsistent(
+          leaseConfig,
+          Vault.revokeSelfToken(client, vaultConfig.vaultUri)(vaultToken)
+        ).recoverWith {
+          case VaultRequestError(
+                _,
+                Some(
+                  UnexpectedStatus(Status.Forbidden, _, _) |
+                  VaultApiError(Status.Forbidden, _)
+                )
+              ) =>
+            // This means the token has already expired or been revoked, so we can ignore this
+            Async[F].unit
+        }
     }
 
   private def recoverVaultRequestWithRevokeAndRetry[F[
