@@ -96,6 +96,44 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
     TestControl.executeEmbed(program).assert
   }
 
+  test("VaultClient.loginOnce won't revoke the token if provided") {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
+        token <- Vault.loginKubernetes(
+          mockService.client,
+          vaultConfig.vaultUri
+        )(
+          vaultConfig.roleId,
+          vaultConfig.jwt,
+          vaultConfig.mountPoint
+        )
+        config = VaultConfig.providedVaultToken(
+          vaultConfig.vaultUri,
+          token,
+          vaultConfig.tokenLeaseExtension
+        )
+        _ <-
+          VaultClient
+            .loginOnce[IO](mockService.client, config, consistencyConfig)
+            .use(_.readSecret[Int]("secret/foo").map(_.data))
+            .assertEquals(5)
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
   test("VaultClient.loginOnce won't renew the token") {
     val program =
       for {
@@ -168,6 +206,48 @@ class VaultClientSpec extends CatsEffectSuite with ScalaCheckEffectSuite {
             TokenRevoked(
               path"/v1/auth/token/revoke-self",
               s"$roleLogId token 0"
+            )
+          )
+        )
+      } yield ()
+
+    TestControl.executeEmbed(program).assert
+  }
+
+  test("VaultClient.loginAndKeep won't revoke the token if provided") {
+    val program =
+      for {
+        _ <- mockService.addRoles(role -> renewable(1.minute))
+        _ <- mockService.addV1Secrets(path"foo" -> Secret(role :: Nil, 5))
+        token <- Vault.loginKubernetes(
+          mockService.client,
+          vaultConfig.vaultUri
+        )(
+          vaultConfig.roleId,
+          vaultConfig.jwt,
+          vaultConfig.mountPoint
+        )
+        config = VaultConfig.providedVaultToken(
+          vaultConfig.vaultUri,
+          token,
+          vaultConfig.tokenLeaseExtension
+        )
+        _ <-
+          VaultClient
+            .loginAndKeep[IO](
+              mockService.client,
+              config,
+              consistencyConfig
+            )
+            .use(_.readSecret[Int]("secret/foo").map(_.data))
+            .assertEquals(5)
+        _ <- mockService.logs.assertEquals(
+          Vector(
+            Login(path"/v1/auth/kubernetes/login", role, s"$roleLogId token 0"),
+            SecretViewed(
+              path"/v1/secret/foo",
+              s"$roleLogId token 0",
+              path"foo"
             )
           )
         )
