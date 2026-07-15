@@ -24,12 +24,13 @@ ThisBuild / githubWorkflowPermissions := Some(
 ThisBuild / githubWorkflowIncludeClean := false
 ThisBuild / githubWorkflowGeneratedUploadSteps ~= { workflows =>
   workflows.map {
-    case job: WorkflowStep.Use if job.name.contains("Upload target directories") =>
+    case job: WorkflowStep.Use
+        if job.name.contains("Upload target directories") =>
       job.updatedParams("retention-days", "2").withCond(None)
     case job => job
   }
 }
-  
+
 val http4sV = "0.23.36"
 val fs2V = "3.13.0"
 val munitCatsEffectV = "2.2.0"
