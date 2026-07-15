@@ -1,4 +1,6 @@
 import laika.helium.config.{HeliumIcon, IconLink}
+import org.typelevel.sbt.gha.PermissionValue
+import org.typelevel.sbt.gha.Permissions
 import org.typelevel.sbt.gha.WorkflowStep.*
 import org.typelevel.sbt.site.GenericSiteSettings
 
@@ -12,6 +14,22 @@ ThisBuild / tlJdkRelease := Some(8)
 ThisBuild / tlBaseVersion := "9.5"
 ThisBuild / githubWorkflowTargetBranches :=
   Seq("*", "series/*")
+
+ThisBuild / githubWorkflowPermissions := Some(
+  Permissions.Specify.defaultRestrictive.withContents(PermissionValue.Write)
+)
+
+// We can't set permissions on the clean workflow, but we can set a
+// reasonable number of retention days and get rid of it entirely!
+ThisBuild / githubWorkflowIncludeClean := false
+ThisBuild / githubWorkflowGeneratedUploadSteps ~= { workflows =>
+  workflows.map {
+    case job: WorkflowStep.Use
+        if job.name.contains("Upload target directories") =>
+      job.updatedParams("retention-days", "2").withCond(None)
+    case job => job
+  }
+}
 
 val http4sV = "0.23.36"
 val fs2V = "3.13.0"
