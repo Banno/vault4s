@@ -975,7 +975,7 @@ class VaultSpec
     }
   }
 
-  test("renewToken suppresses echoing the token when it is not renewable") {
+  test("renewToken suppresses returning the token when it is not renewable") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault
         .renewSelfToken[IO](mockClient, uri)(
@@ -984,11 +984,33 @@ class VaultSpec
         )
         .redeem(
           error =>
-            if (
-              error.getMessage.contains(clientToken) ||
-              error.toString.contains(clientToken)
-            )
-              PropF.falsified[IO].label("Client token in the error message")
+            if (error.getMessage.contains(clientToken))
+              PropF
+                .falsified[IO]
+                .label(
+                  s"""Client token in the error message.
+                  |  token: $clientToken
+                  |  message: ${error.getMessage}
+                  |""".stripMargin
+                )
+            else if (error.toString.contains(clientToken))
+              PropF
+                .falsified[IO]
+                .label(
+                  s"""Client token in the error toString.
+                   |  token: $clientToken
+                   |  output: $error
+                   |""".stripMargin
+                )
+            else if (!error.getMessage.startsWith("Token lease ***"))
+              PropF
+                .falsified[IO]
+                .label(
+                  s"""Client token does not appear to have been redacted
+                   |  token: $clientToken
+                   |  output: ${error.getMessage}
+                   |""".stripMargin
+                )
             else PropF.passed[IO].label("Client token redacted"),
           _ => PropF.falsified[IO].label("Renewal should have failed")
         )

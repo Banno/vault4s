@@ -272,9 +272,7 @@ object Vault {
       newLeaseDuration: FiniteDuration
   )(implicit F: Concurrent[F]): F[VaultToken] =
     if (!token.renewable)
-      NonRenewableToken(
-        s"tokenLength=${token.clientToken.length}"
-      ).raiseError[F, VaultToken]
+      NonRenewableToken(token).raiseError[F, VaultToken]
     else {
       val request = Request[F](
         method = Method.POST,
@@ -736,9 +734,7 @@ object Vault {
         .flatMap(lastRenewal =>
           Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)
         ) ++
-        Stream.raiseError[F](
-          NonRenewableToken(s"tokenLength=${token.clientToken.length}")
-        )
+        Stream.raiseError[F](NonRenewableToken(token))
 
     def cleanup(token: VaultToken): F[Unit] =
       revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
@@ -1056,5 +1052,14 @@ object Vault {
   final case class NonRenewableToken(leaseId: String) extends Throwable {
     override def getMessage(): String =
       s"Token lease $leaseId could not be renewed any longer"
+  }
+  object NonRenewableToken {
+    def apply(token: VaultToken): NonRenewableToken = {
+      val last3 = token.clientToken.substring(
+        0.max(token.clientToken.length - 3),
+        token.clientToken.length
+      )
+      new NonRenewableToken(s"***$last3")
+    }
   }
 }
