@@ -975,6 +975,26 @@ class VaultSpec
     }
   }
 
+  test("renewToken suppresses echoing the token when it is not renewable") {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      Vault
+        .renewSelfToken[IO](mockClient, uri)(
+          VaultToken(clientToken, 3600, renewable = false),
+          1.hour
+        )
+        .redeem(
+          error =>
+            if (
+              error.getMessage.contains(clientToken) ||
+              error.toString.contains(clientToken)
+            )
+              PropF.falsified[IO].label("Client token in the error message")
+            else PropF.passed[IO].label("Client token redacted"),
+          _ => PropF.falsified[IO].label("Renewal should have failed")
+        )
+    }
+  }
+
   test("revokeToken works as expected when revoking a valid token") {
     PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
       Vault

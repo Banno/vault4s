@@ -272,7 +272,9 @@ object Vault {
       newLeaseDuration: FiniteDuration
   )(implicit F: Concurrent[F]): F[VaultToken] =
     if (!token.renewable)
-      NonRenewableToken(token.clientToken).raiseError[F, VaultToken]
+      NonRenewableToken(
+        s"tokenLength=${token.clientToken.length}"
+      ).raiseError[F, VaultToken]
     else {
       val request = Request[F](
         method = Method.POST,
@@ -734,7 +736,9 @@ object Vault {
         .flatMap(lastRenewal =>
           Stream.sleep(lastRenewal.foldMap(_.leaseDuration).seconds)
         ) ++
-        Stream.raiseError[F](NonRenewableToken(token.clientToken))
+        Stream.raiseError[F](
+          NonRenewableToken(s"tokenLength=${token.clientToken.length}")
+        )
 
     def cleanup(token: VaultToken): F[Unit] =
       revokeSelfToken(client, vaultUri)(token).handleError(_ => ())
