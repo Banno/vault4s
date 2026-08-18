@@ -1053,7 +1053,8 @@ object Vault {
     override def getMessage(): String =
       s"Token lease $leaseId could not be renewed any longer"
   }
-  object NonRenewableToken extends scala.runtime.AbstractFunction1[String,NonRenewableToken] {
+  object NonRenewableToken
+      extends scala.runtime.AbstractFunction1[String, NonRenewableToken] {
     def apply(token: VaultToken): NonRenewableToken = {
       val last3 = token.clientToken.substring(
         0.max(token.clientToken.length - 3),
