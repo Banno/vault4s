@@ -250,7 +250,7 @@ final class TransitClient[F[_]](
             VaultRequestError(
               request,
               e.some,
-              s"keyName=${key.name}, operation=EncryptOne, context = ${context.context.value}".some
+              s"keyName=${key.name}, operation=EncryptOne, contextLength=${context.context.value.length}".some
             )
           )
       }
@@ -346,12 +346,11 @@ final class TransitClient[F[_]](
     for {
       response <- F.handleErrorWith(client.expect[DecryptResponse](request)) {
         e =>
-          val showCtx = context.context.value
           F.raiseError(
             VaultRequestError(
               request,
               e.some,
-              s"keyName=${key.name}, operation=DecryptOne, context = $showCtx".some
+              s"keyName=${key.name}, operation=DecryptOne, contextLength=${context.context.value.length}".some
             )
           )
       }

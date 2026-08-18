@@ -97,6 +97,30 @@ class TransitSpec extends ScalaCheckSuite with TransitData {
     }
   }
 
+  property("encrypt and decrypt errors do not expose the context value") {
+    Prop.forAll(genTestCase) { testCase =>
+      val otoken = token + "X"
+      val transit = new TransitClient[IO](
+        testCase.singleMockClient,
+        testUri,
+        otoken,
+        KeyName(keyName)
+      )
+      val plainText = PlainText(Order.toBase64(testCase.order))
+      val context = Context(Agent.toBase64(testCase.agent))
+      val results = List(
+        transit.encryptInContext(plainText, context).attempt.unsafeRunSync(),
+        transit.decryptInContext(testCase.encrypted, context).attempt.unsafeRunSync()
+      )
+      results.forall {
+        case Left(e) =>
+          !e.getMessage.contains(context.context.value) &&
+          e.getMessage.contains(s"contextLength=${context.context.value.length}")
+        case Right(_) => false
+      }
+    }
+  }
+
   property("encryptBatch may work for all inputs ") {
     Prop.forAll(nelGen(genTestCase)) { testCases =>
       val encCases = testCases.map(_.encryptCase)
