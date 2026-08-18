@@ -23,7 +23,9 @@ import cats.implicits.*
 import com.banno.vault.models.{
   CertificateData,
   CertificateRequest,
+  ConsistencyConfig,
   VaultApiError,
+  VaultConfig,
   VaultKeys,
   VaultRequestError,
   VaultSecret,
@@ -849,6 +851,26 @@ class VaultSpec
           case other =>
             IO[Unit](fail("Expected VaultRequestError", clues(other)))
         }
+    }
+  }
+
+  test(
+    "VaultClient.loginOnce sends the configured password when logging in with username and password"
+  ) {
+    PropF.forAllF(VaultArbitraries.validVaultUri) { uri =>
+      VaultClient
+        .loginOnce[IO](
+          mockClient,
+          VaultConfig.usernameAndPassword(
+            uri,
+            validUsername,
+            validPassword,
+            1.hour
+          ),
+          ConsistencyConfig.make(1.minute, 1)
+        )
+        .use(_.readSecret[VaultValue](secretPostgresPassPath).map(_.data))
+        .assertEquals(VaultValue(postgresPass))
     }
   }
 
