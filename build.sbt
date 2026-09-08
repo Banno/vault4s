@@ -90,7 +90,7 @@ lazy val commonSettings = Seq(
     "org.typelevel" %% "munit-cats-effect" % munitCatsEffectV % Test,
     "org.scalameta" %% "munit-scalacheck" % munitScalaCheckV % Test,
     "org.typelevel" %% "scalacheck-effect-munit" % scalacheckEffectV % Test,
-    "org.typelevel" %% "cats-effect-testkit" % "3.7.0" % Test
+    "org.typelevel" %% "cats-effect-testkit" % "3.7.1" % Test
   )
 )
 
