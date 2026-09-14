@@ -34,7 +34,7 @@ ThisBuild / githubWorkflowGeneratedUploadSteps ~= { workflows =>
 val http4sV = "0.23.36"
 val fs2V = "3.13.0"
 val munitCatsEffectV = "2.2.0"
-val munitScalaCheckV = "1.3.0"
+val munitScalaCheckV = "1.3.1"
 val scalacheckEffectV = "2.1.0"
 
 val kindProjectorV = "0.13.4"
