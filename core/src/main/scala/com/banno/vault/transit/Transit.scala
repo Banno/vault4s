@@ -16,6 +16,7 @@
 
 package com.banno.vault.transit
 
+import cats.~>
 import cats.implicits._
 import cats.data.NonEmptyList
 import org.http4s._
@@ -150,6 +151,79 @@ object Transit {
 
 }
 
+trait VaultTransitClient[F[_]] {
+  def keyDetails: F[KeyDetails]
+
+  def encrypt(plaintext: PlainText): F[CipherText]
+  def encryptInContext(
+      plaintext: PlainText,
+      context: Context
+  ): F[CipherText]
+  def encryptBatch(
+      plaintexts: NonEmptyList[PlainText]
+  ): F[NonEmptyList[TransitError.Or[CipherText]]]
+  def encryptInContextBatch(
+      inputs: NonEmptyList[(PlainText, Context)]
+  ): F[NonEmptyList[TransitError.Or[CipherText]]]
+
+  def decrypt(cipherText: CipherText): F[PlainText]
+  def decryptInContext(
+      cipherText: CipherText,
+      context: Context
+  ): F[PlainText]
+  def decryptBatch(
+      inputs: NonEmptyList[CipherText]
+  ): F[NonEmptyList[TransitError.Or[PlainText]]]
+  def decryptInContextBatch(
+      inputs: NonEmptyList[(CipherText, Context)]
+  ): F[NonEmptyList[TransitError.Or[PlainText]]]
+
+  def mapK[G[_]](fg: F ~> G): VaultTransitClient[G]
+}
+
+object VaultTransitClient {
+
+  private[transit] def mapK[F[_], G[_]](
+      base: VaultTransitClient[F],
+      fg: F ~> G
+  ): VaultTransitClient[G] = new VaultTransitClient[G] {
+    override def keyDetails: G[KeyDetails] = fg(base.keyDetails)
+
+    override def encrypt(plaintext: PlainText): G[CipherText] =
+      fg(base.encrypt(plaintext))
+    override def encryptInContext(
+        plaintext: PlainText,
+        context: Context
+    ): G[CipherText] = fg(base.encryptInContext(plaintext, context))
+    override def encryptBatch(
+        plaintexts: NonEmptyList[PlainText]
+    ): G[NonEmptyList[TransitError.Or[CipherText]]] =
+      fg(base.encryptBatch(plaintexts))
+    override def encryptInContextBatch(
+        inputs: NonEmptyList[(PlainText, Context)]
+    ): G[NonEmptyList[TransitError.Or[CipherText]]] =
+      fg(base.encryptInContextBatch(inputs))
+
+    override def decrypt(cipherText: CipherText): G[PlainText] =
+      fg(base.decrypt(cipherText))
+    override def decryptInContext(
+        cipherText: CipherText,
+        context: Context
+    ): G[PlainText] = fg(base.decryptInContext(cipherText, context))
+    override def decryptBatch(
+        inputs: NonEmptyList[CipherText]
+    ): G[NonEmptyList[TransitError.Or[PlainText]]] =
+      fg(base.decryptBatch(inputs))
+    override def decryptInContextBatch(
+        inputs: NonEmptyList[(CipherText, Context)]
+    ): G[NonEmptyList[TransitError.Or[PlainText]]] =
+      fg(base.decryptInContextBatch(inputs))
+
+    override def mapK[H[_]](gh: G ~> H): VaultTransitClient[H] =
+      VaultTransitClient.mapK(this, gh)
+  }
+}
+
 /** A TransitClient represents an authenticated connection to a vault transit
   * service. The way we see to use it is that, in your application you may have
   * a certain type of data that you want to encrypt or decrypt using Vault
@@ -160,7 +234,8 @@ final class TransitClient[F[_]](
     vaultUri: Uri,
     token: String,
     key: KeyName
-)(implicit F: Concurrent[F]) {
+)(implicit F: Concurrent[F])
+    extends VaultTransitClient[F] {
 
   private implicit val encryptResponseEntityDecoder
       : EntityDecoder[F, EncryptResponse] = jsonOf
@@ -421,4 +496,6 @@ final class TransitClient[F[_]](
     } yield results.map(_.map(_.plaintext))
   }
 
+  override def mapK[G[_]](fg: F ~> G): VaultTransitClient[G] =
+    VaultTransitClient.mapK(this, fg)
 }
